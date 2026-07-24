@@ -32,6 +32,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import random
 import time
 from pathlib import Path
 from typing import Any
@@ -41,7 +42,7 @@ from sensors.mmwave_reader import MmwaveReader
 from sensors.uwb_reader import UwbReader
 
 GESTURES = [
-    "Pull", "Push", "Clockwise", "Anti-clockwise", "Right", "Left",
+    "Clockwise", "Anti-clockwise", "Right", "Left",
     "Bye-Bye", "One-Arm Boxing", "Clapping", "Two-Arm Boxing", "T-Arm",
     "Raise Arms", "Soli", "Making Fist and Open", "Palm Up-Down",
 ]  # full official set; pass a smaller subset via --gestures to start
@@ -52,17 +53,31 @@ GESTURES = [
 class SessionWriter:
     """Owns the session folder and the shared CSV files for one collection run."""
 
-    def __init__(self, out_root: Path, sensor_names: list[str], gestures: list[str], collector: str) -> None:
+    def __init__(
+        self,
+        out_root: Path,
+        sensor_names: list[str],
+        gestures: list[str],
+        collector: str,
+        dry_run: bool = False,
+    ) -> None:
+        self.dry_run = dry_run
         stamp = time.strftime("%Y%m%d_%H%M%S")
         self.session_dir = out_root / f"session_{stamp}"
+        self._sensor_files: dict[str, Any] = {}
+        self._sensor_writers: dict[str, csv.writer] = {}
+        self._sensor_headers_written: dict[str, bool] = {name: False for name in sensor_names}
+        if dry_run:
+            # No directory, no files -- log_event/log_trial/log_samples/close
+            # below all become no-ops so nothing touches disk.
+            print(f"[dry-run] not saving anything (would have been {self.session_dir})")
+            return
+
         self.session_dir.mkdir(parents=True, exist_ok=False)
 
         self.events_path = self.session_dir / "events.csv"
         self.trials_path = self.session_dir / "trials.csv"
         self.sensor_paths = {name: self.session_dir / f"{name}.csv" for name in sensor_names}
-        self._sensor_files: dict[str, Any] = {}
-        self._sensor_writers: dict[str, csv.writer] = {}
-        self._sensor_headers_written: dict[str, bool] = {name: False for name in sensor_names}
 
         self.events_file = open(self.events_path, "w", newline="")
         self.events_writer = csv.writer(self.events_file)
@@ -86,16 +101,20 @@ class SessionWriter:
 
     def log_event(self, event: str, trial_index: int | None = None, gesture: str | None = None, note: str = "") -> float:
         t = time.monotonic()
+        if self.dry_run:
+            return t
         self.events_writer.writerow([f"{t:.6f}", event, trial_index if trial_index is not None else "", gesture or "", note])
         self.events_file.flush()
         return t
 
     def log_trial(self, trial_index: int, gesture: str, t_start: float, t_end: float, accepted: bool) -> None:
+        if self.dry_run:
+            return
         self.trials_writer.writerow([trial_index, gesture, f"{t_start:.6f}", f"{t_end:.6f}", int(accepted)])
         self.trials_file.flush()
 
     def log_samples(self, sensor_name: str, samples: list[tuple[float, dict[str, Any]]]) -> None:
-        if not samples:
+        if self.dry_run or not samples:
             return
         if sensor_name not in self._sensor_files:
             self._sensor_files[sensor_name] = open(self.sensor_paths[sensor_name], "w", newline="")
@@ -114,6 +133,8 @@ class SessionWriter:
         self._sensor_files[sensor_name].flush()
 
     def close(self) -> None:
+        if self.dry_run:
+            return
         self.events_file.close()
         self.trials_file.close()
         for f in self._sensor_files.values():
@@ -123,7 +144,7 @@ class SessionWriter:
 def build_readers(sensor_names: list[str], args: argparse.Namespace) -> dict[str, Any]:
     readers: dict[str, Any] = {}
     if "imu" in sensor_names:
-        readers["imu"] = ImuReader(port=args.imu_port, baud=args.imu_baud)
+        readers["imu"] = ImuReader(port=args.imu_port, baud=args.imu_baud, max_rate_hz=args.imu_rate_hz)
     if "mmwave" in sensor_names:
         readers["mmwave"] = MmwaveReader(
             port=args.mmwave_port,
@@ -193,6 +214,10 @@ def main() -> int:
                          help="Which sensors to run this session.")
     parser.add_argument("--imu-port", default=None, help="Serial port for the IMU, e.g. /dev/cu.usbserial-XXXX")
     parser.add_argument("--imu-baud", type=int, default=115200)
+    parser.add_argument("--imu-rate-hz", type=float, default=25.0,
+                         help="Throttle IMU samples pushed downstream to at most this rate "
+                         "(the board itself still streams at its firmware rate, ~100Hz; "
+                         "extra samples are just dropped). Pass 0 to disable throttling.")
     parser.add_argument("--mmwave-port", default=None, help="Serial port for the radar")
     parser.add_argument("--mmwave-cfg", type=Path, default=None, help="Radar CLI config file (.cfg)")
     parser.add_argument("--mmwave-baud", type=int, default=115200)
@@ -207,8 +232,8 @@ def main() -> int:
         default=Path(r"C:\Users\Prutha Pandit\UWB_lab\uwb-qorvo-tools"),
         help="Path to the uwb-qorvo-tools folder (run_fira_twr.py lives under scripts/fira/run_fira_twr/).",
     )
-    parser.add_argument("--uwb-channel", type=int, default=5, help="Class-sheet-assigned FiRa UWB channel.")
-    parser.add_argument("--uwb-preamble-idx", type=int, default=12, help="Class-sheet-assigned FiRa preamble code.")
+    parser.add_argument("--uwb-channel", type=int, default=9, help="Class-sheet-assigned FiRa UWB channel.")
+    parser.add_argument("--uwb-preamble-idx", type=int, default=9, help="Class-sheet-assigned FiRa preamble code.")
     parser.add_argument("--uwb-session", type=int, default=42)
     parser.add_argument("--uwb-slot-span", type=int, default=2400)
     parser.add_argument("--uwb-slots-per-rr", type=int, default=25)
@@ -218,8 +243,25 @@ def main() -> int:
     parser.add_argument("--gestures", nargs="+", default=GESTURES)
     parser.add_argument("--trials-per-gesture", type=int, default=8)
     parser.add_argument("--trial-seconds", type=float, default=2.0)
+    parser.add_argument(
+        "--no-shuffle",
+        action="store_true",
+        help="Collect trials in fixed gesture-block order (all of gesture 1, then all of "
+        "gesture 2, ...) instead of the default shuffled order. Shuffling avoids a "
+        "session-time confound where a classifier could learn recording order instead "
+        "of the actual gesture.",
+    )
+    parser.add_argument(
+        "--shuffle-seed",
+        type=int,
+        default=None,
+        help="Seed for trial-order shuffling, for a reproducible order across runs.",
+    )
     parser.add_argument("--collector", required=True, help="Name of the person performing gestures this session")
     parser.add_argument("--out", default="data/raw", help="Root output directory")
+    parser.add_argument("--dry-run", action="store_true",
+                         help="Run trials and print sample counts as usual, but don't create a "
+                         "session folder or write any files. For testing the pipeline.")
     args = parser.parse_args()
 
     if "imu" in args.sensors and not args.imu_port:
@@ -229,25 +271,69 @@ def main() -> int:
     if "uwb" in args.sensors and not (args.uwb_controller_port and args.uwb_right_port and args.uwb_left_port):
         parser.error("--uwb-controller-port, --uwb-right-port, and --uwb-left-port are required when collecting from 'uwb'")
 
+    trial_order = [gesture for gesture in args.gestures for _ in range(args.trials_per_gesture)]
+    if not args.no_shuffle:
+        rng = random.Random(args.shuffle_seed)
+        rng.shuffle(trial_order)
+
     readers = build_readers(args.sensors, args)
-    writer = SessionWriter(Path(args.out), list(readers.keys()), args.gestures, args.collector)
-    print(f"Session folder: {writer.session_dir}")
+    writer = SessionWriter(
+        Path(args.out), list(readers.keys()), args.gestures, args.collector, dry_run=args.dry_run
+    )
+    if not args.dry_run:
+        (writer.session_dir / "session_metadata.json").write_text(
+            json.dumps(
+                {
+                    **json.loads((writer.session_dir / "session_metadata.json").read_text()),
+                    "shuffled": not args.no_shuffle,
+                    "shuffle_seed": args.shuffle_seed,
+                    "trial_order": trial_order,
+                },
+                indent=2,
+            )
+        )
+    print(f"Session folder: {writer.session_dir}" + (" (dry run -- nothing saved)" if args.dry_run else ""))
+    print(f"Trial order: {'shuffled' if not args.no_shuffle else 'fixed blocks'}")
 
     for reader in readers.values():
         reader.start()
 
+    interrupted = False
     try:
-        trial_index = 0
-        for gesture in args.gestures:
-            for _ in range(args.trials_per_gesture):
-                trial_index += 1
-                run_trial(readers, writer, trial_index, gesture, args.trial_seconds)
+        for trial_index, gesture in enumerate(trial_order, start=1):
+            run_trial(readers, writer, trial_index, gesture, args.trial_seconds)
+    except KeyboardInterrupt:
+        interrupted = True
+        print("\n\nInterrupted -- stopping sensors gracefully (this closes the UWB "
+              "subprocesses cleanly instead of leaving them stuck ranging)...")
     finally:
-        for reader in readers.values():
+        for name, reader in readers.items():
             reader.stop()
+        # Readers may push a final diagnostic (e.g. "never produced any data")
+        # only once their background thread notices the stop; give that a
+        # moment to land, then drain once more so it isn't silently lost.
+        time.sleep(0.3)
+        for name, reader in readers.items():
+            samples, errors = reader.drain()
+            for err in errors:
+                print(f"  [{name}] ERROR (final): {err}")
+            if samples:
+                writer.log_samples(name, samples)
+                print(f"  [{name}] {len(samples)} additional samples after the last trial")
         writer.close()
 
-    print(f"\nDone. Session saved to {writer.session_dir}")
+    if interrupted:
+        if args.dry_run:
+            print("\nStopped early. (dry run -- nothing was saved)")
+        else:
+            print(f"\nStopped early. Partial session saved to {writer.session_dir} -- "
+                  "check trials.csv for how many trials were actually kept.")
+        return 130
+
+    if args.dry_run:
+        print("\nDone. (dry run -- nothing was saved)")
+    else:
+        print(f"\nDone. Session saved to {writer.session_dir}")
     return 0
 
 

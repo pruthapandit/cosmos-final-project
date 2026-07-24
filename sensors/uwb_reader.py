@@ -44,9 +44,18 @@ class OneToManyRangeParser:
     sub-block reports one controlee's status/mac/distance. Rounds are
     finalized (and returned) when the next "sequence n:" line arrives, so
     call flush() once after the stream ends to get the last round.
+
+    The controller's stdout can contain more than one "session handle" --
+    in practice this happens when a prior run left a session active on the
+    board that never got torn down, and it keeps reporting its own (always
+    failing) rounds alongside the real one. Only the first session handle
+    seen is treated as real; rounds from any other handle are parsed (so
+    they don't corrupt the real round's in-progress fields) but discarded
+    instead of being emitted as samples.
     """
 
     sequence_re = re.compile(r"sequence n:\s*(\d+)")
+    session_handle_re = re.compile(r"session handle:\s*(\d+)")
     measurement_re = re.compile(r"#\s*Measurement\s+\d+:")
     status_re = re.compile(r"status:\s*([A-Za-z0-9_]+)\s*\((0x[0-9a-fA-F]+)\)")
     mac_re = re.compile(r"mac address:\s*([0-9A-Fa-f.:]+)")
@@ -57,6 +66,10 @@ class OneToManyRangeParser:
         self._current_mac: str | None = None
         self._current_status: str | None = None
         self.pending: dict[str, Any] = {}
+        self._current_session_handle: int | None = None
+        self._target_session_handle: int | None = None
+        self._ignoring_current_round = False
+        self.discarded_foreign_rounds = 0
 
     @staticmethod
     def _label_for_mac(mac_text: str | None) -> str | None:
@@ -86,14 +99,35 @@ class OneToManyRangeParser:
     def feed(self, line: str) -> list[dict[str, Any]]:
         samples: list[dict[str, Any]] = []
 
+        session_match = self.session_handle_re.search(line)
+        if session_match:
+            self._current_session_handle = int(session_match.group(1))
+            return samples
+
         sequence_match = self.sequence_re.search(line)
         if sequence_match:
             if self.pending:
                 samples.append(self._finalize())
-            self.sequence = int(sequence_match.group(1))
-            self.pending = {"sequence": self.sequence}
+            if self._target_session_handle is None:
+                self._target_session_handle = self._current_session_handle
+            if self._current_session_handle == self._target_session_handle:
+                self._ignoring_current_round = False
+                self.sequence = int(sequence_match.group(1))
+                self.pending = {"sequence": self.sequence}
+            else:
+                # A different session handle is reporting rounds -- almost
+                # certainly a stale session left active from a previous run.
+                # Ignore every field until the next round starts, so it can't
+                # leak into (or get emitted as) real data.
+                self._ignoring_current_round = True
+                self.discarded_foreign_rounds += 1
+                self.sequence = None
+                self.pending = {}
             self._current_mac = None
             self._current_status = None
+            return samples
+
+        if self._ignoring_current_round:
             return samples
 
         if self.measurement_re.search(line):
@@ -315,13 +349,19 @@ class UwbReader(BaseSensorReader):
                 if self._stop_event.is_set():
                     break
 
+                samples = parser.feed(line)
+
                 lowered = line.lower()
                 if "ranging data" in lowered:
                     saw_ranging_data = True
+                elif "slot in error" in lowered:
+                    pass  # a normal per-measurement field name, not a failure signal
+                elif parser._ignoring_current_round:
+                    pass  # noise from a stale/foreign session handle, not a real failure
                 elif any(marker in lowered for marker in self._FAILURE_MARKERS):
                     self._push_error(f"uwb controller: {line.strip()}")
 
-                for sample in parser.feed(line):
+                for sample in samples:
                     self._push_sample(sample)
         except Exception as exc:  # keep one sensor's failure from taking down the others
             self._push_error(f"uwb: reader loop failed: {exc}")
@@ -330,6 +370,13 @@ class UwbReader(BaseSensorReader):
         final_sample = parser.flush()
         if final_sample is not None:
             self._push_sample(final_sample)
+
+        if parser.discarded_foreign_rounds:
+            print(
+                f"[uwb] ignored {parser.discarded_foreign_rounds} rounds from a stale/foreign "
+                "UWB session handle (most likely left active by a previous run) -- these "
+                "are not in uwb.csv and were not counted as real timeouts"
+            )
 
         if not saw_ranging_data:
             self._push_error(
@@ -368,6 +415,7 @@ if __name__ == "__main__":
     print(f"Ranging for {args.seconds:g}s... (Ctrl+C to stop early)")
     start = time.monotonic()
     total = 0
+    interrupted = False
     try:
         while time.monotonic() - start < args.seconds:
             samples, errors = reader.drain()
@@ -377,6 +425,16 @@ if __name__ == "__main__":
             for ts, fields in samples:
                 print(f"[uwb] t={ts:.3f} {fields}")
             time.sleep(0.05)
+    except KeyboardInterrupt:
+        interrupted = True
+        print("\n[uwb] Interrupted -- stopping subprocesses gracefully...")
     finally:
         reader.stop()
-    print(f"Done. Received {total} rounds in {args.seconds:g}s.")
+        time.sleep(0.3)  # let a final diagnostic (e.g. "never produced data") land
+        samples, errors = reader.drain()
+        for err in errors:
+            print(f"[uwb] {err}")
+        total += len(samples)
+    elapsed = time.monotonic() - start
+    status = "Stopped early" if interrupted else "Done"
+    print(f"{status}. Received {total} rounds in {elapsed:.1f}s.")

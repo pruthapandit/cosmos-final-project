@@ -11,6 +11,7 @@ Expected serial line format (from the ESP32 Core2 IMU firmware):
 from __future__ import annotations
 
 import re
+import time
 from typing import Any
 
 from sensors.base_reader import BaseSensorReader
@@ -36,12 +37,24 @@ class ImuReader(BaseSensorReader):
 
     name = "imu"
 
-    def __init__(self, port: str, baud: int = 115200, print_unparsed: bool = False) -> None:
+    def __init__(
+        self,
+        port: str,
+        baud: int = 115200,
+        print_unparsed: bool = False,
+        max_rate_hz: float | None = 25.0,
+    ) -> None:
         super().__init__()
         self.port = port
         self.baud = baud
         self.print_unparsed = print_unparsed
+        # The board itself streams at whatever rate its firmware is built with
+        # (~100Hz); this throttles what gets pushed downstream by dropping
+        # samples that arrive before the minimum interval has elapsed, rather
+        # than reflashing the firmware.
+        self.min_sample_interval = (1.0 / max_rate_hz) if max_rate_hz else 0.0
         self._serial_port: Any | None = None
+        self._last_pushed_at: float | None = None
 
     def _open(self) -> None:
         import serial  # local import: only required when this reader is actually used
@@ -73,6 +86,11 @@ class ImuReader(BaseSensorReader):
                     print(f"[imu] unparsed: {line}")
                 continue
 
+            now = time.monotonic()
+            if self.min_sample_interval and self._last_pushed_at is not None:
+                if now - self._last_pushed_at < self.min_sample_interval:
+                    continue
+            self._last_pushed_at = now
             self._push_sample(sample)
 
 
