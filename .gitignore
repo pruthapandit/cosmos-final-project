@@ -1,0 +1,29 @@
+# OS/editor artifacts
+.DS_Store
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Python artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.venv/
+venv/
+env/
+
+# Runtime outputs and collected data
+data/
+datasets/
+sessions/
+models/
+logs/
+uwb_reader_logs/
+*.log
+*.npz
+*.joblib
+*.confusion.png
