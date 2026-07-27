@@ -41,11 +41,17 @@ from sensors.imu_reader import ImuReader
 from sensors.mmwave_reader import MmwaveReader
 from sensors.uwb_reader import UwbReader
 
+#GESTURES = [
+ #   "Push", "Pull"]
+  # full official set; pass a smaller subset via --gestures to start
+   # (e.g. --gestures Pull Push Right Left), then expand once the
+   # pipeline is proven
+
 GESTURES = [
-    "Clockwise", "Anti-clockwise", "Right", "Left",
+    "Push", "Pull", "Clockwise", "Anti-clockwise", "Right", "Left",
     "Bye-Bye", "One-Arm Boxing", "Clapping", "Two-Arm Boxing", "T-Arm",
-    "Raise Arms", "Soli", "Making Fist and Open", "Palm Up-Down",
-]  # full official set; pass a smaller subset via --gestures to start
+    "Raise Arms", "Soli", "Making Fist and Open", "Palm Up-Down"]
+  # full official set; pass a smaller subset via --gestures to start
    # (e.g. --gestures Pull Push Right Left), then expand once the
    # pipeline is proven
 
@@ -194,7 +200,12 @@ def run_trial(
         for err in errors:
             print(f"  [{name}] ERROR: {err}")
         writer.log_samples(name, samples)
-        print(f"  [{name}] {len(samples)} samples")
+        # drain() returns everything queued since the last drain, which
+        # includes the idle gap before this trial (waiting on input()) --
+        # report only what actually falls inside this trial's window so the
+        # count reflects the trial, not how long the tester paused before it.
+        in_window = sum(1 for ts, _ in samples if t_start <= ts <= t_end)
+        print(f"  [{name}] {in_window} samples")
 
     decision = input("  keep this trial? [Y/n/r=repeat] ").strip().lower()
     if decision == "r":
@@ -237,7 +248,14 @@ def main() -> int:
     parser.add_argument("--uwb-session", type=int, default=42)
     parser.add_argument("--uwb-slot-span", type=int, default=2400)
     parser.add_argument("--uwb-slots-per-rr", type=int, default=25)
-    parser.add_argument("--uwb-ranging-span", type=int, default=200, help="Ranging interval in ms (FPS = 1000/this).")
+    parser.add_argument(
+        "--uwb-ranging-span", type=int, default=50,
+        help="Ranging interval in ms (FPS = 1000/this). Must be >= "
+        "--uwb-slot-span * --uwb-slots-per-rr converted to ms (1200 RSTU = 1ms) "
+        "-- e.g. the current defaults (2400 * 25 RSTU = 50ms) mean anything "
+        "below 50 gets silently clamped by the board's firmware back to its "
+        "own default (200ms) instead of erroring.",
+    )
     parser.add_argument("--uwb-startup-delay", type=float, default=5.0,
                          help="Seconds to wait after starting the two controlees before starting the controller.")
     parser.add_argument("--gestures", nargs="+", default=GESTURES)

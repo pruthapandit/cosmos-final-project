@@ -177,7 +177,7 @@ class UwbReader(BaseSensorReader):
         session_id: int = 42,
         slot_span: int = 2400,
         slots_per_rr: int = 25,
-        ranging_span: int = 200,
+        ranging_span: int = 50,
         startup_delay: float = 5.0,
         stop_timeout: float = 5.0,
         python_exe: str = sys.executable,

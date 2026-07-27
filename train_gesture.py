@@ -21,6 +21,14 @@ import numpy as np
 
 STAT_NAMES = ("mean", "std", "min", "max", "p10", "p50", "p90", "start", "end", "delta", "slope")
 
+# Derived from xwrL64xx-evm/hand_distance.cfg's chirpComnCfg/chirpTimingCfg (same
+# formula as get_range_profile.py's parse_range_config): 128 raw bins spanning
+# 0-5.86m. Bin 0 is a fixed antenna-coupling artifact (same magnitude regardless
+# of gesture) and everything past ~2m is static room clutter -- both dwarf the
+# actual hand-motion signal, which lives in the 0.15-2.0m band hand_lab.py
+# already treats as the meaningful hand-gesture range.
+MMWAVE_BIN_SPACING_M = 0.045744698791503904
+
 
 def timestamp() -> str:
     return time.strftime("%Y%m%d_%H%M%S")
@@ -46,6 +54,14 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--imu-trajectory-points", type=int, default=10)
     parser.add_argument("--mmwave-time-bins", type=int, default=16)
     parser.add_argument("--mmwave-range-bins", type=int, default=24)
+    parser.add_argument(
+        "--mmwave-min-range-m", type=float, default=0.15,
+        help="Crop the range profile to this near-field window before resampling/"
+        "normalizing, so static clutter and the bin-0 antenna-coupling artifact "
+        "outside the gesture-relevant range don't dominate the features.",
+    )
+    parser.add_argument("--mmwave-max-range-m", type=float, default=2.0)
+    parser.add_argument("--mmwave-bin-spacing-m", type=float, default=MMWAVE_BIN_SPACING_M)
     parser.add_argument("--uwb-trajectory-points", type=int, default=10)
     parser.add_argument("--test-size", type=float, default=0.25)
     parser.add_argument("--random-state", type=int, default=42)
@@ -192,10 +208,27 @@ def extract_imu_features(data: dict[str, np.ndarray], trajectory_points: int) ->
     return features, names
 
 
+def crop_mmwave_range(profile: np.ndarray, min_range_m: float, max_range_m: float, bin_spacing_m: float) -> np.ndarray:
+    if profile.ndim != 2 or profile.size == 0:
+        return profile
+    num_bins = profile.shape[1]
+    start_bin = max(0, int(math.floor(min_range_m / bin_spacing_m)))
+    stop_bin = min(num_bins, int(math.ceil(max_range_m / bin_spacing_m)) + 1)
+    if start_bin >= stop_bin:
+        return profile
+    return profile[:, start_bin:stop_bin]
+
+
 def extract_mmwave_features(
-    data: dict[str, np.ndarray], time_bins: int, range_bins: int
+    data: dict[str, np.ndarray],
+    time_bins: int,
+    range_bins: int,
+    min_range_m: float = 0.15,
+    max_range_m: float = 2.0,
+    bin_spacing_m: float = MMWAVE_BIN_SPACING_M,
 ) -> tuple[list[float], list[str]]:
     profile = np.asarray(data.get("mmwave_range_profile", np.empty((0, 0))), dtype=float)
+    profile = crop_mmwave_range(profile, min_range_m, max_range_m, bin_spacing_m)
     if profile.ndim != 2 or profile.size == 0:
         image = np.zeros((time_bins, range_bins), dtype=float)
     else:
@@ -227,7 +260,14 @@ def extract_features(data: dict[str, np.ndarray], args: argparse.Namespace) -> t
         features.extend(f)
         names.extend(n)
     if "mmwave" in args.sensors:
-        f, n = extract_mmwave_features(data, args.mmwave_time_bins, args.mmwave_range_bins)
+        f, n = extract_mmwave_features(
+            data,
+            args.mmwave_time_bins,
+            args.mmwave_range_bins,
+            args.mmwave_min_range_m,
+            args.mmwave_max_range_m,
+            args.mmwave_bin_spacing_m,
+        )
         features.extend(f)
         names.extend(n)
     if "uwb" in args.sensors:
@@ -519,6 +559,9 @@ def main() -> int:
         "imu_trajectory_points": args.imu_trajectory_points,
         "mmwave_time_bins": args.mmwave_time_bins,
         "mmwave_range_bins": args.mmwave_range_bins,
+        "mmwave_min_range_m": args.mmwave_min_range_m,
+        "mmwave_max_range_m": args.mmwave_max_range_m,
+        "mmwave_bin_spacing_m": args.mmwave_bin_spacing_m,
         "uwb_trajectory_points": args.uwb_trajectory_points,
         "classifier": args.classifier,
         "classifier_label": classifier_label(args.classifier),
