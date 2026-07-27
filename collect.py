@@ -259,7 +259,7 @@ def main() -> int:
     parser.add_argument("--uwb-startup-delay", type=float, default=5.0,
                          help="Seconds to wait after starting the two controlees before starting the controller.")
     parser.add_argument("--gestures", nargs="+", default=GESTURES)
-    parser.add_argument("--trials-per-gesture", type=int, default=8)
+    parser.add_argument("--trials-per-gesture", type=int, default=10)
     parser.add_argument("--trial-seconds", type=float, default=2.0)
     parser.add_argument(
         "--no-shuffle",

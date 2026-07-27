@@ -153,6 +153,32 @@ def robust_normalize(values: np.ndarray) -> np.ndarray:
     return np.clip(values / scale, -6.0, 6.0)
 
 
+OSCILLATION_STAT_NAMES = ("peak_count", "peak_rate_hz")
+
+
+def oscillation_stats(values: np.ndarray, time_s: np.ndarray) -> list[float]:
+    """Count threshold up-crossings, to tell "one big sweep" gestures (Left,
+    T-Arm: one smooth hump) apart from repetitive ones (Making Fist and
+    Open, Soli: many small spikes) -- summary stats and a coarse resampled
+    trajectory both wash out that difference since they only capture
+    overall level/shape, not how many times the signal oscillates.
+    """
+    values = fill_nan_series(np.asarray(values, dtype=float))
+    if values.size < 3:
+        return [0.0, 0.0]
+    if time_s.size == values.size and values.size > 1:
+        duration = max(float(time_s[-1] - time_s[0]), 1e-9)
+    else:
+        duration = 1.0
+    span = float(np.max(values) - np.min(values))
+    if span <= 1e-9:
+        return [0.0, 0.0]
+    threshold = float(np.min(values)) + 0.5 * span
+    above = values > threshold
+    crossings = int(np.sum((above[1:].astype(int) - above[:-1].astype(int)) == 1))
+    return [float(crossings), float(crossings / duration)]
+
+
 def series_stats(values: np.ndarray, time_s: np.ndarray) -> list[float]:
     values = fill_nan_series(np.asarray(values, dtype=float))
     if values.size == 0:
@@ -205,6 +231,9 @@ def extract_imu_features(data: dict[str, np.ndarray], trajectory_points: int) ->
         trajectory = resample_vector(arr, trajectory_points)
         features.extend(float(v) for v in trajectory)
         names.extend(f"imu_{axis_name}_t{i:02d}" for i in range(trajectory_points))
+    for axis_name, arr in (("accel_mag", accel_mag), ("gyro_mag", gyro_mag)):
+        features.extend(oscillation_stats(arr, time_s))
+        names.extend(f"imu_{axis_name}_{stat}" for stat in OSCILLATION_STAT_NAMES)
     return features, names
 
 
