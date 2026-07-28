@@ -1,0 +1,227 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gesture Recognition -- Live Demo</title>
+<style>
+  :root {
+    --bg: #0b0f16;
+    --panel: #131a24;
+    --panel-border: #232d3d;
+    --text: #e8edf5;
+    --muted: #8a96a8;
+    --accent: #4f8cff;
+    --idle: #3a4759;
+    --good: #34d399;
+    --warn: #f5b942;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    overflow-x: hidden;
+  }
+  .wrap { max-width: 1200px; margin: 0 auto; padding: 20px 24px 40px; }
+  header {
+    display: flex; justify-content: space-between; align-items: baseline;
+    margin-bottom: 18px; flex-wrap: wrap; gap: 8px;
+  }
+  header h1 { font-size: 18px; font-weight: 600; margin: 0; color: var(--muted); letter-spacing: 0.02em; }
+  header .meta { font-size: 13px; color: var(--muted); }
+  header .meta b { color: var(--text); }
+
+  .predict-card {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 18px;
+    padding: 36px 24px; text-align: center; margin-bottom: 20px;
+    transition: box-shadow 0.3s ease;
+  }
+  .predict-card.flash { box-shadow: 0 0 0 3px var(--accent-glow, rgba(79,140,255,0.35)); }
+  .predict-label { font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 10px; }
+  .predict-gesture {
+    font-size: 56px; font-weight: 700; line-height: 1.1;
+    transition: color 0.25s ease;
+  }
+  .predict-gesture.idle { color: var(--idle); }
+  .predict-gesture.active { color: var(--good); }
+  .confidence-row { margin-top: 16px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .confidence-bar-outer {
+    width: 260px; height: 10px; border-radius: 6px; background: #1c2532; overflow: hidden;
+  }
+  .confidence-bar-inner {
+    height: 100%; background: linear-gradient(90deg, var(--accent), var(--good));
+    width: 0%; transition: width 0.2s ease;
+  }
+  .confidence-pct { font-size: 13px; color: var(--muted); min-width: 42px; text-align: left; }
+
+  .grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 18px; }
+  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
+
+  .panel { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; padding: 16px 18px; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; }
+  .bar-row .name { width: 150px; flex-shrink: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-row .track { flex: 1; height: 8px; border-radius: 5px; background: #1c2532; overflow: hidden; }
+  .bar-row .fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s ease; }
+  .bar-row .pct { width: 40px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  canvas { width: 100%; height: 140px; display: block; }
+
+  .history { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
+  .chip {
+    padding: 5px 10px; border-radius: 999px; font-size: 12px; background: #1c2532; color: var(--muted);
+    border: 1px solid var(--panel-border);
+  }
+  .chip.latest { background: rgba(79,140,255,0.15); color: var(--text); border-color: var(--accent); }
+
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
+  .status-dot.live { background: var(--good); box-shadow: 0 0 6px var(--good); }
+  .status-dot.down { background: #6b7684; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1><span class="status-dot down" id="statusDot"></span>Gesture Recognition -- Live Demo</h1>
+    <div class="meta" id="modelMeta">connecting...</div>
+  </header>
+
+  <div class="predict-card" id="predictCard">
+    <div class="predict-label">Current Prediction</div>
+    <div class="predict-gesture idle" id="predictGesture">--</div>
+    <div class="confidence-row">
+      <div class="confidence-bar-outer"><div class="confidence-bar-inner" id="confBar"></div></div>
+      <div class="confidence-pct" id="confPct">0%</div>
+    </div>
+    <div class="history" id="history"></div>
+  </div>
+
+  <div class="grid">
+    <div class="panel">
+      <h2>Top Candidates (this tick)</h2>
+      <div id="top3"></div>
+    </div>
+    <div class="panel">
+      <h2>Motion Energy (IMU gyro magnitude)</h2>
+      <canvas id="gyroChart" width="600" height="140"></canvas>
+    </div>
+    <div class="panel">
+      <h2>UWB Wrist Distance (cm)</h2>
+      <canvas id="uwbChart" width="600" height="140"></canvas>
+    </div>
+    <div class="panel">
+      <h2>mmWave Range Profile (latest frame, near field)</h2>
+      <canvas id="mmwaveChart" width="600" height="140"></canvas>
+    </div>
+  </div>
+</div>
+
+<script>
+const gestureEl = document.getElementById('predictGesture');
+const cardEl = document.getElementById('predictCard');
+const confBar = document.getElementById('confBar');
+const confPct = document.getElementById('confPct');
+const historyEl = document.getElementById('history');
+const top3El = document.getElementById('top3');
+const modelMetaEl = document.getElementById('modelMeta');
+const statusDot = document.getElementById('statusDot');
+
+let lastGesture = null;
+
+function drawLineChart(canvas, series, opts) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (!series || series.length < 2) return;
+
+  const lines = Array.isArray(series[0]) ? series : [series];
+  const colors = opts && opts.colors ? opts.colors : ['#4f8cff', '#34d399'];
+  let allVals = [];
+  lines.forEach(l => allVals = allVals.concat(l));
+  let min = Math.min(...allVals), max = Math.max(...allVals);
+  if (max - min < 1e-6) { max = min + 1; }
+  const pad = 8;
+
+  lines.forEach((line, li) => {
+    ctx.beginPath();
+    ctx.strokeStyle = colors[li % colors.length];
+    ctx.lineWidth = 2;
+    line.forEach((v, i) => {
+      const x = pad + (i / (line.length - 1)) * (w - 2 * pad);
+      const y = h - pad - ((v - min) / (max - min)) * (h - 2 * pad);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+}
+
+function drawBarProfile(canvas, values) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (!values || values.length === 0) return;
+  const max = Math.max(...values, 1e-6);
+  const barW = w / values.length;
+  ctx.fillStyle = '#4f8cff';
+  values.forEach((v, i) => {
+    const bh = (v / max) * (h - 8);
+    ctx.fillRect(i * barW, h - bh, Math.max(barW - 1, 1), bh);
+  });
+}
+
+function setGesture(name, isIdle) {
+  gestureEl.textContent = name;
+  gestureEl.className = 'predict-gesture ' + (isIdle ? 'idle' : 'active');
+  if (name !== lastGesture) {
+    cardEl.classList.add('flash');
+    setTimeout(() => cardEl.classList.remove('flash'), 400);
+    lastGesture = name;
+  }
+}
+
+function render(data) {
+  statusDot.className = 'status-dot live';
+  modelMetaEl.innerHTML = `sensors: <b>${data.sensors.join('+')}</b> &nbsp;|&nbsp; trained accuracy: <b>${(data.model_accuracy*100).toFixed(1)}%</b>`;
+
+  setGesture(data.prediction, data.prediction === 'Idle');
+  const pct = Math.round(data.confidence * 100);
+  confBar.style.width = pct + '%';
+  confPct.textContent = pct + '%';
+
+  top3El.innerHTML = '';
+  (data.top3 || []).forEach(([label, prob]) => {
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML = `<div class="name">${label}</div><div class="track"><div class="fill" style="width:${(prob*100).toFixed(0)}%"></div></div><div class="pct">${(prob*100).toFixed(0)}%</div>`;
+    top3El.appendChild(row);
+  });
+
+  historyEl.innerHTML = '';
+  (data.history || []).forEach((g, i, arr) => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (i === arr.length - 1 ? ' latest' : '');
+    chip.textContent = g;
+    historyEl.appendChild(chip);
+  });
+
+  drawLineChart(document.getElementById('gyroChart'), data.gyro_series, {colors: ['#4f8cff']});
+  drawLineChart(document.getElementById('uwbChart'), [data.uwb_right_series || [], data.uwb_left_series || []], {colors: ['#4f8cff', '#f5b942']});
+  drawBarProfile(document.getElementById('mmwaveChart'), data.mmwave_profile || []);
+}
+
+function connect() {
+  const es = new EventSource('/stream');
+  es.onmessage = (e) => {
+    try { render(JSON.parse(e.data)); } catch (err) { console.error(err); }
+  };
+  es.onerror = () => {
+    statusDot.className = 'status-dot down';
+    es.close();
+    setTimeout(connect, 1000);
+  };
+}
+connect();
+</script>
+</body>
+</html>
