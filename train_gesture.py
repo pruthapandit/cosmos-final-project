@@ -615,9 +615,17 @@ def main() -> int:
         else model_out.with_suffix(".confusion.png")
     )
     confusion_out.parent.mkdir(parents=True, exist_ok=True)
+    # Default figure size doesn't scale with class count, so long/rotated
+    # labels (e.g. "Making Fist and Open") collide once there are ~15 of
+    # them; size the figure to the label count and anchor the rotated
+    # labels at their own edge so they line up cleanly instead of overlapping.
+    n_classes = len(labels_order)
+    fig_side = max(8.0, n_classes * 0.62)
+    fig, ax = plt.subplots(figsize=(fig_side, fig_side * 0.82))
     display = ConfusionMatrixDisplay(matrix, display_labels=labels_order)
-    display.plot(cmap="Blues", values_format="d", xticks_rotation=45)
-    plt.title(f"Gesture Classifier [{'+'.join(args.sensors)}] ({accuracy:.2%} accuracy)")
+    display.plot(cmap="Blues", values_format="d", xticks_rotation=45, ax=ax, colorbar=True)
+    ax.set_title(f"Gesture Classifier [{'+'.join(args.sensors)}] ({accuracy:.2%} accuracy)")
+    plt.setp(ax.get_xticklabels(), rotation=45, ha="right", rotation_mode="anchor")
     plt.tight_layout()
     plt.savefig(confusion_out, dpi=180)
     plt.close()

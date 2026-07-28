@@ -1,0 +1,284 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Gesture Recognition -- Record &amp; Predict</title>
+<style>
+  :root {
+    --bg: #0b0f16;
+    --panel: #131a24;
+    --panel-border: #232d3d;
+    --text: #e8edf5;
+    --muted: #8a96a8;
+    --accent: #4f8cff;
+    --idle: #3a4759;
+    --good: #34d399;
+    --rec: #e6544a;
+  }
+  * { box-sizing: border-box; }
+  html, body {
+    margin: 0; padding: 0; min-height: 100%;
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 28px 24px 48px; text-align: center; }
+  header { display: flex; justify-content: space-between; align-items: baseline; margin-bottom: 30px; text-align: left; }
+  header h1 { font-size: 17px; font-weight: 600; margin: 0; color: var(--muted); letter-spacing: 0.02em; }
+  header .meta { font-size: 13px; color: var(--muted); }
+  header .meta b { color: var(--text); }
+
+  /* --- record button / ring --- */
+  .ring-wrap { position: relative; width: 260px; height: 260px; margin: 10px auto 26px; }
+  svg.ring { transform: rotate(-90deg); width: 260px; height: 260px; }
+  svg.ring circle { fill: none; stroke-width: 10; }
+  .ring-track { stroke: #1c2532; }
+  .ring-progress {
+    stroke: var(--rec); stroke-linecap: round;
+    stroke-dasharray: 754; stroke-dashoffset: 754;
+    transition: stroke-dashoffset 0.05s linear;
+  }
+  #recordBtn {
+    position: absolute; inset: 14px; border-radius: 50%;
+    background: var(--panel); border: 1px solid var(--panel-border);
+    color: var(--text); font-size: 20px; font-weight: 700; cursor: pointer;
+    display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px;
+    transition: transform 0.15s ease, background 0.2s ease;
+  }
+  #recordBtn:hover:not(:disabled) { transform: scale(1.03); background: #17202c; }
+  #recordBtn:active:not(:disabled) { transform: scale(0.98); }
+  #recordBtn:disabled { cursor: default; }
+  #recordBtn .dot { width: 14px; height: 14px; border-radius: 50%; background: var(--rec); }
+  #recordBtn.recording .dot { animation: pulse 1s infinite; }
+  #recordBtn .sub { font-size: 12px; font-weight: 400; color: var(--muted); }
+  @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.35; } }
+
+  .result-card {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 18px;
+    padding: 30px 24px; margin-bottom: 20px; min-height: 168px;
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+  }
+  .predict-label { font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 10px; }
+  .predict-gesture {
+    font-size: 52px; font-weight: 700; line-height: 1.1; color: var(--idle);
+    transform: scale(0.85); opacity: 0.5; transition: transform 0.35s cubic-bezier(.2,1.4,.4,1), opacity 0.3s ease, color 0.3s ease;
+  }
+  .predict-gesture.reveal { transform: scale(1); opacity: 1; color: var(--good); }
+  .confidence-row { margin-top: 16px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .confidence-bar-outer { width: 260px; height: 10px; border-radius: 6px; background: #1c2532; overflow: hidden; }
+  .confidence-bar-inner { height: 100%; background: linear-gradient(90deg, var(--accent), var(--good)); width: 0%; transition: width 0.4s ease; }
+  .confidence-pct { font-size: 13px; color: var(--muted); min-width: 42px; text-align: left; }
+
+  .panel { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; padding: 16px 18px; text-align: left; }
+  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; }
+  .bar-row .name { width: 150px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-row .track { flex: 1; height: 8px; border-radius: 5px; background: #1c2532; overflow: hidden; }
+  .bar-row .fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.4s ease; }
+  .bar-row .pct { width: 40px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
+
+  .history { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 16px; justify-content: center; }
+  .chip { padding: 5px 10px; border-radius: 999px; font-size: 12px; background: #1c2532; color: var(--muted); border: 1px solid var(--panel-border); }
+  .chip.latest { background: rgba(79,140,255,0.15); color: var(--text); border-color: var(--accent); }
+
+  canvas { width: 100%; height: 110px; display: block; }
+  .charts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
+  @media (max-width: 720px) { .charts { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>Gesture Recognition -- Record &amp; Predict</h1>
+    <div class="meta" id="modelMeta">loading model...</div>
+  </header>
+
+  <div class="ring-wrap">
+    <svg class="ring" viewBox="0 0 260 260">
+      <circle class="ring-track" cx="130" cy="130" r="120"></circle>
+      <circle class="ring-progress" id="ringProgress" cx="130" cy="130" r="120"></circle>
+    </svg>
+    <button id="recordBtn">
+      <div class="dot"></div>
+      <div id="btnLabel">Record</div>
+      <div class="sub" id="btnSub">click to capture ~2s</div>
+    </button>
+  </div>
+
+  <div class="result-card">
+    <div class="predict-label">Prediction</div>
+    <div class="predict-gesture" id="predictGesture">--</div>
+    <div class="confidence-row">
+      <div class="confidence-bar-outer"><div class="confidence-bar-inner" id="confBar"></div></div>
+      <div class="confidence-pct" id="confPct">0%</div>
+    </div>
+  </div>
+
+  <div class="panel">
+    <h2>Top Candidates</h2>
+    <div id="top3"><div style="color:var(--muted); font-size:13px;">Record a gesture to see results.</div></div>
+  </div>
+
+  <div class="history" id="history"></div>
+
+  <div class="charts">
+    <div class="panel"><h2>IMU Gyro Magnitude</h2><canvas id="gyroChart" width="280" height="110"></canvas></div>
+    <div class="panel"><h2>UWB Distance (cm)</h2><canvas id="uwbChart" width="280" height="110"></canvas></div>
+    <div class="panel"><h2>mmWave Range (latest frame)</h2><canvas id="mmwaveChart" width="280" height="110"></canvas></div>
+  </div>
+</div>
+
+<script>
+const recordBtn = document.getElementById('recordBtn');
+const btnLabel = document.getElementById('btnLabel');
+const btnSub = document.getElementById('btnSub');
+const ring = document.getElementById('ringProgress');
+const RING_CIRC = 2 * Math.PI * 120;
+ring.style.strokeDasharray = RING_CIRC;
+
+const gestureEl = document.getElementById('predictGesture');
+const confBar = document.getElementById('confBar');
+const confPct = document.getElementById('confPct');
+const top3El = document.getElementById('top3');
+const historyEl = document.getElementById('history');
+const modelMetaEl = document.getElementById('modelMeta');
+
+let windowSeconds = 2.0;
+let recording = false;
+
+function drawLineChart(canvas, series, colors) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (!series || series.length < 2) return;
+  const lines = Array.isArray(series[0]) ? series : [series];
+  let allVals = [];
+  lines.forEach(l => allVals = allVals.concat(l));
+  let min = Math.min(...allVals), max = Math.max(...allVals);
+  if (max - min < 1e-6) max = min + 1;
+  const pad = 8;
+  lines.forEach((line, li) => {
+    ctx.beginPath();
+    ctx.strokeStyle = colors[li % colors.length];
+    ctx.lineWidth = 2;
+    line.forEach((v, i) => {
+      const x = pad + (i / (line.length - 1)) * (w - 2 * pad);
+      const y = h - pad - ((v - min) / (max - min)) * (h - 2 * pad);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    });
+    ctx.stroke();
+  });
+}
+
+function drawBarProfile(canvas, values) {
+  const ctx = canvas.getContext('2d');
+  const w = canvas.width, h = canvas.height;
+  ctx.clearRect(0, 0, w, h);
+  if (!values || values.length === 0) return;
+  const max = Math.max(...values, 1e-6);
+  const barW = w / values.length;
+  ctx.fillStyle = '#4f8cff';
+  values.forEach((v, i) => {
+    const bh = (v / max) * (h - 8);
+    ctx.fillRect(i * barW, h - bh, Math.max(barW - 1, 1), bh);
+  });
+}
+
+async function loadInfo() {
+  const r = await fetch('/info');
+  const info = await r.json();
+  windowSeconds = info.window_seconds;
+  modelMetaEl.innerHTML = `sensors: <b>${info.sensors.join('+')}</b> &nbsp;|&nbsp; trained accuracy: <b>${(info.accuracy*100).toFixed(1)}%</b>`;
+  btnSub.textContent = `click to capture ~${windowSeconds}s`;
+}
+
+function startCountdown() {
+  const start = performance.now();
+  const durationMs = windowSeconds * 1000;
+  function tick() {
+    const elapsed = performance.now() - start;
+    const frac = Math.min(elapsed / durationMs, 1);
+    ring.style.strokeDashoffset = RING_CIRC * (1 - frac);
+    btnLabel.textContent = (windowSeconds - elapsed / 1000).toFixed(1) + 's';
+    if (frac < 1 && recording) requestAnimationFrame(tick);
+  }
+  requestAnimationFrame(tick);
+}
+
+function pollLive() {
+  if (!recording) return;
+  fetch('/live')
+    .then(r => r.json())
+    .then(charts => { if (recording) renderCharts(charts); })
+    .catch(() => {});
+  setTimeout(pollLive, 150);
+}
+
+async function record() {
+  if (recording) return;
+  recording = true;
+  recordBtn.disabled = true;
+  recordBtn.classList.add('recording');
+  btnSub.textContent = 'recording...';
+  ring.style.stroke = '';
+  startCountdown();
+  pollLive();
+
+  gestureEl.classList.remove('reveal');
+
+  try {
+    const r = await fetch('/record', { method: 'POST' });
+    const data = await r.json();
+    render(data);
+  } catch (err) {
+    btnLabel.textContent = 'Error';
+    console.error(err);
+  } finally {
+    recording = false;
+    recordBtn.disabled = false;
+    recordBtn.classList.remove('recording');
+    btnLabel.textContent = 'Record';
+    btnSub.textContent = `click to capture ~${windowSeconds}s`;
+    ring.style.strokeDashoffset = RING_CIRC;
+  }
+}
+
+function render(data) {
+  gestureEl.textContent = data.prediction;
+  // force reflow so the reveal animation restarts every time
+  void gestureEl.offsetWidth;
+  gestureEl.classList.add('reveal');
+
+  const pct = Math.round(data.confidence * 100);
+  confBar.style.width = pct + '%';
+  confPct.textContent = pct + '%';
+
+  top3El.innerHTML = '';
+  (data.top3 || []).forEach(([label, prob]) => {
+    const row = document.createElement('div');
+    row.className = 'bar-row';
+    row.innerHTML = `<div class="name">${label}</div><div class="track"><div class="fill" style="width:${(prob*100).toFixed(0)}%"></div></div><div class="pct">${(prob*100).toFixed(0)}%</div>`;
+    top3El.appendChild(row);
+  });
+
+  historyEl.innerHTML = '';
+  (data.history || []).forEach((g, i, arr) => {
+    const chip = document.createElement('div');
+    chip.className = 'chip' + (i === arr.length - 1 ? ' latest' : '');
+    chip.textContent = g;
+    historyEl.appendChild(chip);
+  });
+
+  renderCharts(data);
+}
+
+function renderCharts(charts) {
+  drawLineChart(document.getElementById('gyroChart'), charts.gyro_series || [], ['#4f8cff']);
+  drawLineChart(document.getElementById('uwbChart'), [charts.uwb_right_series || [], charts.uwb_left_series || []], ['#4f8cff', '#f5b942']);
+  drawBarProfile(document.getElementById('mmwaveChart'), charts.mmwave_profile || []);
+}
+
+recordBtn.addEventListener('click', record);
+loadInfo();
+</script>
+</body>
+</html>
