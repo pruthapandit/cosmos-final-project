@@ -117,6 +117,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", required=True, help="Path to a .joblib model saved by train_gesture.py")
     parser.add_argument("--trial-seconds", type=float, default=2.0)
     parser.add_argument("--top-k", type=int, default=3, help="How many ranked predictions to print.")
+    parser.add_argument(
+        "--reject-threshold", type=float, default=0.4,
+        help="If the top class's probability is below this, report 'None' instead of forcing a "
+        "guess -- the model is a closed-set classifier and will otherwise always name one of its "
+        "trained gestures even for a completely unrelated motion. 0 disables rejection.",
+    )
 
     parser.add_argument("--imu-port", default=None)
     parser.add_argument("--imu-baud", type=int, default=115200)
@@ -201,15 +207,24 @@ def main() -> int:
 
             features, _ = tg.extract_features(data, feature_args)
             X = np.asarray([features], dtype=float)
-            prediction = model.predict(X)[0]
-            print(f"\n  >>> Predicted: {prediction}")
+            proba = model.predict_proba(X)[0]
+            classes = model.classes_
+            top_idx = int(np.argmax(proba))
+            top_confidence = float(proba[top_idx])
+            raw_prediction = str(classes[top_idx])
 
-            if hasattr(model, "predict_proba"):
-                proba = model.predict_proba(X)[0]
-                classes = model.classes_
-                order = np.argsort(proba)[::-1][: args.top_k]
-                for i in order:
-                    print(f"      {classes[i]:22s} {proba[i] * 100:5.1f}%")
+            if args.reject_threshold and top_confidence < args.reject_threshold:
+                prediction = "None"
+                print(f"\n  >>> Predicted: None  (best guess {raw_prediction} only "
+                      f"{top_confidence * 100:.0f}% confident -- below --reject-threshold "
+                      f"{args.reject_threshold:.2f})")
+            else:
+                prediction = raw_prediction
+                print(f"\n  >>> Predicted: {prediction}")
+
+            order = np.argsort(proba)[::-1][: args.top_k]
+            for i in order:
+                print(f"      {classes[i]:22s} {proba[i] * 100:5.1f}%")
     except KeyboardInterrupt:
         print("\n\nStopping...")
     finally:

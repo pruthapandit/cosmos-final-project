@@ -117,9 +117,10 @@ def main() -> int:
         reader.start()
 
     print(f"\nStreaming... (Ctrl+C to stop). Classifying the last {args.window_seconds:g}s every "
-          f"{args.tick_seconds:g}s. confidence>={args.confidence_threshold:.2f} needs "
+          f"{args.tick_seconds:g}s. confidence<{args.confidence_threshold:.2f} reports 'None' "
+          f"(untrained/unrecognized motion); confidence>={args.confidence_threshold:.2f} needs "
           f"{args.switch_to_gesture_votes} consecutive ticks to switch to a gesture "
-          f"({args.switch_to_idle_votes} to fall back to Idle); a single tick "
+          f"({args.switch_to_idle_votes} to fall back to Idle/None); a single tick "
           f">={args.high_confidence_threshold:.2f} switches immediately.\n")
 
     try:
@@ -151,16 +152,20 @@ def main() -> int:
             proba = model.predict_proba(X)[0]
             classes = model.classes_
             top_idx = np.argmax(proba)
-            prediction = str(classes[top_idx])
+            raw_prediction = str(classes[top_idx])
             top_confidence = float(proba[top_idx])
 
-            # Abstain on low-confidence ticks (typical of transitional motion
-            # between gestures that doesn't cleanly match any trained class)
-            # instead of letting them vote for a spurious switch.
-            if top_confidence < args.confidence_threshold or prediction == displayed:
+            # Below --confidence-threshold: this isn't a transient blip to
+            # ignore, it's the model telling us the input doesn't confidently
+            # match ANY trained class -- likely an untrained/random motion.
+            # Treat "None" as its own candidate (same quick/safe persistence
+            # as Idle) rather than silently freezing on the last real gesture.
+            prediction = "None" if top_confidence < args.confidence_threshold else raw_prediction
+
+            if prediction == displayed:
                 pending_candidate = None
                 pending_count = 0
-            elif top_confidence >= args.high_confidence_threshold:
+            elif prediction != "None" and top_confidence >= args.high_confidence_threshold:
                 # Fast path: one very confident tick is enough. Needed for
                 # discrete one-shot gestures, which may only ever produce a
                 # single well-aligned window before the slide moves past them.
@@ -169,15 +174,16 @@ def main() -> int:
                 pending_count = 0
                 print(f"  >>> {displayed}  ({top_confidence * 100:.0f}% this tick, fast path)")
             else:
-                # Slow path: moderate confidence needs to repeat a few times
-                # before we commit, which is what filters out transitional
-                # motion (it rarely stays confidently pointed at one class).
+                # Slow path: moderate confidence (or a sustained "None") needs
+                # to repeat a few times before we commit, which is what
+                # filters out transitional motion (it rarely stays
+                # confidently pointed at one class for long).
                 if prediction == pending_candidate:
                     pending_count += 1
                 else:
                     pending_candidate = prediction
                     pending_count = 1
-                required = args.switch_to_idle_votes if prediction == "Idle" else args.switch_to_gesture_votes
+                required = args.switch_to_idle_votes if prediction in ("Idle", "None") else args.switch_to_gesture_votes
                 if pending_count >= required:
                     displayed = prediction
                     pending_candidate = None

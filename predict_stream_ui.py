@@ -179,14 +179,20 @@ def prediction_loop(
         classes = model.classes_
         top_idx = np.argsort(proba)[::-1][:3]
         top3 = [(str(classes[i]), float(proba[i])) for i in top_idx]
-        prediction = top3[0][0]
+        raw_prediction = top3[0][0]
         top_confidence = top3[0][1]
         state.update(top3=top3)
 
-        if top_confidence < args.confidence_threshold or prediction == displayed:
+        # Below --confidence-threshold: not a transient blip to ignore, the
+        # model doesn't confidently match ANY trained class -- report "None"
+        # (same quick/safe persistence as Idle) instead of silently freezing
+        # on whatever real gesture was last displayed.
+        prediction = "None" if top_confidence < args.confidence_threshold else raw_prediction
+
+        if prediction == displayed:
             pending_candidate = None
             pending_count = 0
-        elif top_confidence >= args.high_confidence_threshold:
+        elif prediction != "None" and top_confidence >= args.high_confidence_threshold:
             displayed = prediction
             pending_candidate = None
             pending_count = 0
@@ -198,7 +204,7 @@ def prediction_loop(
             else:
                 pending_candidate = prediction
                 pending_count = 1
-            required = args.switch_to_idle_votes if prediction == "Idle" else args.switch_to_gesture_votes
+            required = args.switch_to_idle_votes if prediction in ("Idle", "None") else args.switch_to_gesture_votes
             if pending_count >= required:
                 displayed = prediction
                 pending_candidate = None

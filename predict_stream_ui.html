@@ -44,6 +44,7 @@
   }
   .predict-gesture.idle { color: var(--idle); }
   .predict-gesture.active { color: var(--good); }
+  .predict-gesture.none-match { color: var(--warn); }
   .confidence-row { margin-top: 16px; display: flex; align-items: center; justify-content: center; gap: 10px; }
   .confidence-bar-outer {
     width: 260px; height: 10px; border-radius: 6px; background: #1c2532; overflow: hidden;
@@ -170,9 +171,9 @@ function drawBarProfile(canvas, values) {
   });
 }
 
-function setGesture(name, isIdle) {
-  gestureEl.textContent = name;
-  gestureEl.className = 'predict-gesture ' + (isIdle ? 'idle' : 'active');
+function setGesture(name, kind) {
+  gestureEl.textContent = name === 'None' ? 'None (unrecognized)' : name;
+  gestureEl.className = 'predict-gesture ' + kind;
   if (name !== lastGesture) {
     cardEl.classList.add('flash');
     setTimeout(() => cardEl.classList.remove('flash'), 400);
@@ -184,7 +185,8 @@ function render(data) {
   statusDot.className = 'status-dot live';
   modelMetaEl.innerHTML = `sensors: <b>${data.sensors.join('+')}</b> &nbsp;|&nbsp; trained accuracy: <b>${(data.model_accuracy*100).toFixed(1)}%</b>`;
 
-  setGesture(data.prediction, data.prediction === 'Idle');
+  const kind = data.prediction === 'Idle' ? 'idle' : (data.prediction === 'None' ? 'none-match' : 'active');
+  setGesture(data.prediction, kind);
   const pct = Math.round(data.confidence * 100);
   confBar.style.width = pct + '%';
   confPct.textContent = pct + '%';

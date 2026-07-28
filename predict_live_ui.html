@@ -62,6 +62,7 @@
     font-size: 52px; font-weight: 700; line-height: 1.1; color: var(--idle);
     transform: scale(0.85); opacity: 0.5; transition: transform 0.35s cubic-bezier(.2,1.4,.4,1), opacity 0.3s ease, color 0.3s ease;
   }
+  .predict-gesture.none-match { color: var(--warn); }
   .predict-gesture.reveal { transform: scale(1); opacity: 1; color: var(--good); }
   .confidence-row { margin-top: 16px; display: flex; align-items: center; justify-content: center; gap: 10px; }
   .confidence-bar-outer { width: 260px; height: 10px; border-radius: 6px; background: #1c2532; overflow: hidden; }
@@ -243,7 +244,8 @@ async function record() {
 }
 
 function render(data) {
-  gestureEl.textContent = data.prediction;
+  gestureEl.textContent = data.prediction === 'None' ? 'None (unrecognized)' : data.prediction;
+  gestureEl.classList.toggle('none-match', data.prediction === 'None');
   // force reflow so the reveal animation restarts every time
   void gestureEl.offsetWidth;
   gestureEl.classList.add('reveal');

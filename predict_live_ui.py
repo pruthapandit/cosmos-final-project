@@ -81,6 +81,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", required=True)
     parser.add_argument("--trial-seconds", type=float, default=2.0)
     parser.add_argument("--top-k", type=int, default=3)
+    parser.add_argument(
+        "--reject-threshold", type=float, default=0.4,
+        help="If the top class's probability is below this, report 'None' instead of forcing a "
+        "guess. 0 disables rejection.",
+    )
     parser.add_argument("--web-port", type=int, default=8766)
     parser.add_argument("--no-browser", action="store_true")
 
@@ -165,6 +170,7 @@ def do_one_recording(
     feature_args: argparse.Namespace,
     trial_seconds: float,
     top_k: int,
+    reject_threshold: float,
     history: deque[str],
 ) -> dict[str, Any]:
     t_start = time.monotonic()
@@ -179,13 +185,21 @@ def do_one_recording(
     classes = model.classes_
     order = np.argsort(proba)[::-1][:top_k]
     top_k_list = [(str(classes[i]), float(proba[i])) for i in order]
-    prediction = top_k_list[0][0]
+    top_confidence = top_k_list[0][1]
+
+    # Closed-set classifier: it will always name one of its trained classes
+    # unless we explicitly reject low-confidence guesses as "None" (a random,
+    # untrained motion should not get confidently mapped onto a real gesture).
+    if reject_threshold and top_confidence < reject_threshold:
+        prediction = "None"
+    else:
+        prediction = top_k_list[0][0]
 
     history.append(prediction)
 
     return {
         "prediction": prediction,
-        "confidence": top_k_list[0][1],
+        "confidence": top_confidence,
         "top3": top_k_list,
         "history": list(history),
         **charts,
@@ -255,7 +269,8 @@ def make_handler(
                     return
                 with record_lock:
                     result = do_one_recording(
-                        live_buffer, sensors, model, feature_args, args.trial_seconds, args.top_k, history
+                        live_buffer, sensors, model, feature_args, args.trial_seconds, args.top_k,
+                        args.reject_threshold, history
                     )
                 self._send_json(result)
                 return
