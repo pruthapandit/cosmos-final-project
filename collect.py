@@ -313,11 +313,13 @@ def main() -> int:
     print(f"Session folder: {writer.session_dir}" + (" (dry run -- nothing saved)" if args.dry_run else ""))
     print(f"Trial order: {'shuffled' if not args.no_shuffle else 'fixed blocks'}")
 
-    for reader in readers.values():
-        reader.start()
-
+    started_reader_names: list[str] = []
     interrupted = False
     try:
+        for name, reader in readers.items():
+            reader.start()
+            started_reader_names.append(name)
+
         for trial_index, gesture in enumerate(trial_order, start=1):
             run_trial(readers, writer, trial_index, gesture, args.trial_seconds)
     except KeyboardInterrupt:
@@ -325,13 +327,15 @@ def main() -> int:
         print("\n\nInterrupted -- stopping sensors gracefully (this closes the UWB "
               "subprocesses cleanly instead of leaving them stuck ranging)...")
     finally:
-        for name, reader in readers.items():
+        for name in reversed(started_reader_names):
+            reader = readers[name]
             reader.stop()
         # Readers may push a final diagnostic (e.g. "never produced any data")
         # only once their background thread notices the stop; give that a
         # moment to land, then drain once more so it isn't silently lost.
         time.sleep(0.3)
-        for name, reader in readers.items():
+        for name in started_reader_names:
+            reader = readers[name]
             samples, errors = reader.drain()
             for err in errors:
                 print(f"  [{name}] ERROR (final): {err}")

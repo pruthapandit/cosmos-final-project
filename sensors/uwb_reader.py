@@ -302,7 +302,7 @@ class UwbReader(BaseSensorReader):
         )
         self._controller_log = open(controller_log_path, "w", buffering=1)
 
-    def _graceful_stop(self, proc: subprocess.Popen | None) -> None:
+    def _signal_stop(self, proc: subprocess.Popen | None) -> None:
         if proc is None or proc.poll() is not None:
             return
         try:
@@ -311,6 +311,20 @@ class UwbReader(BaseSensorReader):
                 proc.stdin.flush()
         except (BrokenPipeError, OSError):
             pass
+
+    def _request_stop(self) -> None:
+        # run_fira_twr.py is blocked in input("Press <RETURN> to stop") while
+        # ranging forever. Send that RETURN before BaseSensorReader waits for
+        # the stdout reader thread, otherwise the thread can sit on readline()
+        # until the generic join timeout expires.
+        self._signal_stop(self._controller_proc)
+        self._signal_stop(self._right_proc)
+        self._signal_stop(self._left_proc)
+
+    def _graceful_stop(self, proc: subprocess.Popen | None) -> None:
+        if proc is None or proc.poll() is not None:
+            return
+        self._signal_stop(proc)
         try:
             proc.wait(timeout=self.stop_timeout)
         except subprocess.TimeoutExpired:
@@ -326,26 +340,35 @@ class UwbReader(BaseSensorReader):
         self._graceful_stop(self._controller_proc)
         self._graceful_stop(self._right_proc)
         self._graceful_stop(self._left_proc)
+        self._controller_proc = None
+        self._right_proc = None
+        self._left_proc = None
 
         if self._right_log not in (None, subprocess.DEVNULL):
             self._right_log.close()
+            self._right_log = None
         if self._left_log not in (None, subprocess.DEVNULL):
             self._left_log.close()
+            self._left_log = None
         if self._controller_log is not None:
             self._controller_log.close()
+            self._controller_log = None
 
     _FAILURE_MARKERS = (
         "critical", "traceback", "error", "timeout", "rejected", "failed", "exception",
     )
 
     def _run(self) -> None:
-        assert self._controller_proc is not None and self._controller_proc.stdout is not None
+        controller_proc = self._controller_proc
+        if controller_proc is None or controller_proc.stdout is None:
+            return
         parser = OneToManyRangeParser()
         saw_ranging_data = False
         try:
-            for line in self._controller_proc.stdout:
-                if self._controller_log is not None:
-                    self._controller_log.write(line)
+            for line in controller_proc.stdout:
+                controller_log = self._controller_log
+                if controller_log is not None:
+                    controller_log.write(line)
                 if self._stop_event.is_set():
                     break
 

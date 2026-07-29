@@ -223,26 +223,34 @@ def main() -> int:
     history: deque[str] = deque(maxlen=10)
     record_lock = threading.Lock()
 
-    for reader in readers.values():
-        reader.start()
-
-    server = ThreadingHTTPServer(
-        ("127.0.0.1", args.web_port),
-        make_handler(readers, model, feature_args, args, sensors, accuracy, history, record_lock),
-    )
-    url = f"http://127.0.0.1:{args.web_port}"
-    print(f"\nOpen {url} and click Record.  (Ctrl+C to stop)\n")
-    if not args.no_browser:
-        threading.Timer(0.5, lambda: webbrowser.open(url)).start()
-
+    started_reader_names: list[str] = []
+    server: ThreadingHTTPServer | None = None
+    serving = False
     try:
+        for name, reader in readers.items():
+            reader.start()
+            started_reader_names.append(name)
+
+        server = ThreadingHTTPServer(
+            ("127.0.0.1", args.web_port),
+            make_handler(readers, model, feature_args, args, sensors, accuracy, history, record_lock),
+        )
+        url = f"http://127.0.0.1:{args.web_port}"
+        print(f"\nOpen {url} and click Record.  (Ctrl+C to stop)\n")
+        if not args.no_browser:
+            threading.Timer(0.5, lambda: webbrowser.open(url)).start()
+
+        serving = True
         server.serve_forever()
     except KeyboardInterrupt:
         print("\n\nStopping...")
     finally:
-        server.shutdown()
-        for reader in readers.values():
-            reader.stop()
+        if server is not None:
+            if serving:
+                server.shutdown()
+            server.server_close()
+        for name in reversed(started_reader_names):
+            readers[name].stop()
 
     return 0
 

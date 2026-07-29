@@ -262,29 +262,40 @@ def main() -> int:
     state = SharedState(sensors=sensors, accuracy=float(payload.get("accuracy", float("nan"))))
     stop_event = threading.Event()
 
-    for reader in readers.values():
-        reader.start()
-
-    worker = threading.Thread(
-        target=prediction_loop, args=(readers, model, feature_args, state, args, stop_event), daemon=True
-    )
-    worker.start()
-
-    server = ThreadingHTTPServer(("127.0.0.1", args.web_port), make_handler(state))
-    url = f"http://127.0.0.1:{args.web_port}"
-    print(f"\nDashboard running at {url}  (Ctrl+C to stop)\n")
-    if not args.no_browser:
-        threading.Timer(0.5, lambda: webbrowser.open(url)).start()
-
+    started_reader_names: list[str] = []
+    worker: threading.Thread | None = None
+    server: ThreadingHTTPServer | None = None
+    serving = False
     try:
+        for name, reader in readers.items():
+            reader.start()
+            started_reader_names.append(name)
+
+        worker = threading.Thread(
+            target=prediction_loop, args=(readers, model, feature_args, state, args, stop_event), daemon=True
+        )
+        worker.start()
+
+        server = ThreadingHTTPServer(("127.0.0.1", args.web_port), make_handler(state))
+        url = f"http://127.0.0.1:{args.web_port}"
+        print(f"\nDashboard running at {url}  (Ctrl+C to stop)\n")
+        if not args.no_browser:
+            threading.Timer(0.5, lambda: webbrowser.open(url)).start()
+
+        serving = True
         server.serve_forever()
     except KeyboardInterrupt:
         print("\n\nStopping...")
     finally:
         stop_event.set()
-        server.shutdown()
-        for reader in readers.values():
-            reader.stop()
+        if server is not None:
+            if serving:
+                server.shutdown()
+            server.server_close()
+        if worker is not None:
+            worker.join(timeout=2.0)
+        for name in reversed(started_reader_names):
+            readers[name].stop()
 
     return 0
 
