@@ -33,15 +33,9 @@ from predict_live import (
 )
 
 HTML_PATH = Path(__file__).with_name("predict_stream_ui.html")
-UWB_CHART_HISTORY = 100  # points kept for the UWB scrolling chart (~UWB_CHART_HISTORY * tick-seconds of history)
 
 
 class SharedState:
-    """Only the prediction plus a UWB right/left distance trace are kept --
-    the fuller IMU/mmWave visualization was removed for speed, but a live
-    UWB trace is worth the small per-tick cost for diagnosing UWB-specific
-    live-vs-offline discrepancies."""
-
     def __init__(self, sensors: list[str], accuracy: float) -> None:
         self._lock = threading.Lock()
         self.sensors = sensors
@@ -51,8 +45,6 @@ class SharedState:
         self.top3: list[tuple[str, float]] = []
         self.history: deque[str] = deque(maxlen=10)
         self.history.append("Idle")
-        self.uwb_right_series: deque[float] = deque(maxlen=UWB_CHART_HISTORY)
-        self.uwb_left_series: deque[float] = deque(maxlen=UWB_CHART_HISTORY)
 
     def update(self, **kwargs: Any) -> None:
         with self._lock:
@@ -63,11 +55,6 @@ class SharedState:
         with self._lock:
             self.history.append(gesture)
 
-    def extend_uwb(self, right: list[float], left: list[float]) -> None:
-        with self._lock:
-            self.uwb_right_series.extend(right)
-            self.uwb_left_series.extend(left)
-
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
@@ -77,8 +64,6 @@ class SharedState:
                 "confidence": self.confidence,
                 "top3": list(self.top3),
                 "history": list(self.history),
-                "uwb_right_series": [v for v in self.uwb_right_series if np.isfinite(v)],
-                "uwb_left_series": [v for v in self.uwb_left_series if np.isfinite(v)],
             }
 
 
@@ -151,14 +136,6 @@ def prediction_loop(
                 data.update(build_mmwave_dict(windowed, window_start))
             elif name == "uwb":
                 data.update(build_uwb_dict(windowed, window_start))
-                right = data.get("uwb_right_distance_cm", np.array([]))
-                left = data.get("uwb_left_distance_cm", np.array([]))
-                if right.size or left.size:
-                    # Only the newest points each tick, so the chart scrolls
-                    # instead of re-plotting the whole window every time.
-                    take_r = right[-max(1, right.size // 5):] if right.size else np.array([])
-                    take_l = left[-max(1, left.size // 5):] if left.size else np.array([])
-                    state.extend_uwb(list(take_r.astype(float)), list(take_l.astype(float)))
 
         features, _ = tg.extract_features(data, feature_args)
         X = np.asarray([features], dtype=float)
