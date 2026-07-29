@@ -41,3 +41,6 @@ UWB ranging depends on a separate `uwb-qorvo-tools` checkout (Qorvo's FiRa
 UCI tooling); point `--uwb-tools-root` at it. It also needs a Python
 environment where `uci`/`fira` actually import cleanly (Python 3.13 breaks
 a dynamic-enum patch this library relies on -- Python 3.9/3.10 works).
+
+# Demo Video
+[<img width="1509" height="851" alt="Demo Video Thumbnail" src="https://github.com/user-attachments/assets/d5a1270e-c4de-411e-af16-9ce7aff9afda" />](https://drive.google.com/file/d/1eZHX9ld04wxXehSZrOb5YAlqsGebDRLl/view?usp=sharing)
