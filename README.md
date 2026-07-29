@@ -44,3 +44,24 @@ a dynamic-enum patch this library relies on -- Python 3.9/3.10 works).
 
 # Demo Video
 [<img width="1509" height="851" alt="Demo Video Thumbnail" src="https://github.com/user-attachments/assets/d5a1270e-c4de-411e-af16-9ce7aff9afda" />](https://drive.google.com/file/d/1eZHX9ld04wxXehSZrOb5YAlqsGebDRLl/view?usp=sharing)
+
+
+
+# Just to remind:
+
+Code for real time ui demo with UWB ranging results:
+```bash
+/opt/anaconda3/envs/uwb-lab/bin/python predict_stream_ui.py \
+  --model models/random_forest_jianhao_eric_joycelyn_evelyn_v2.joblib \
+  --window-seconds 2 \
+  --tick-seconds 0.1 \
+  --confidence-threshold 0.55 \
+  --high-confidence-threshold 0.70 \
+  --imu-port /dev/cu.wchusbserial5B1F0091131 \
+  --mmwave-port /dev/cu.usbserial-BH00LV2S \
+  --mmwave-cfg xwrL64xx-evm/hand_distance.cfg \
+  --uwb-controller-port /dev/cu.usbmodemF262DD5D6B311 \
+  --uwb-left-port /dev/cu.usbmodemC02254A92D0A1 \
+  --uwb-right-port /dev/cu.usbmodemF838BDB7F5E71 \
+  --uwb-tools-root /Users/evelynwang/Downloads/UWB_lab-main/uwb-qorvo-tools
+```

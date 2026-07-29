@@ -267,6 +267,12 @@ class UwbReader(BaseSensorReader):
             text=True,
             bufsize=1,
             env=self._env(),
+            # Ctrl+C is delivered to every process in the terminal's process
+            # group.  Keep the Qorvo tool out of that group: it must receive
+            # a newline from _graceful_stop() so it can run ranging_stop() and
+            # session_deinit(), rather than dying at input() with
+            # KeyboardInterrupt and leaving the board's session active.
+            start_new_session=(os.name == "posix"),
         )
         return proc, log_file
 

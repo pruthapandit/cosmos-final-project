@@ -315,18 +315,52 @@ UWB_MAX_PLAUSIBLE_CM = 500.0  # the anchor/wrist setup never exceeds ~2m; anythi
 # entire trial's mean/std/max features toward thousands of cm.
 
 
+def uwb_asymmetry_features(
+    std_left: float, std_right: float, trajectory_left: np.ndarray, trajectory_right: np.ndarray
+) -> list[float]:
+    """One-arm gestures move only one wrist while the other stays ~stationary;
+    two-arm gestures move both. Per-hand stats/trajectories alone leave a
+    classifier to infer that relationship combinatorially across many trees --
+    these features name it directly: std_ratio/std_diff flag "did only one
+    hand move", corr flags "did they move in lockstep" (two-arm) vs one being
+    flat (one-arm, near-zero either way).
+    """
+    lo, hi = sorted((std_left, std_right))
+    std_ratio = lo / (hi + 1e-6)
+    std_diff = hi - lo
+    if (
+        trajectory_left.size == trajectory_right.size
+        and trajectory_left.size > 1
+        and np.std(trajectory_left) > 1e-9
+        and np.std(trajectory_right) > 1e-9
+    ):
+        corr = float(np.corrcoef(trajectory_left, trajectory_right)[0, 1])
+    else:
+        corr = 0.0
+    return [float(std_ratio), float(std_diff), corr]
+
+
 def extract_uwb_features(data: dict[str, np.ndarray], trajectory_points: int) -> tuple[list[float], list[str]]:
     time_s = np.asarray(data.get("uwb_time_s", []), dtype=float)
     features: list[float] = []
     names: list[str] = []
+    stds: dict[str, float] = {}
+    trajectories: dict[str, np.ndarray] = {}
     for label in ("right", "left"):
         arr = np.asarray(data.get(f"uwb_{label}_distance_cm", []), dtype=float)
         arr = np.where(arr > UWB_MAX_PLAUSIBLE_CM, np.nan, arr)
-        features.extend(series_stats(arr, time_s))
+        stats = series_stats(arr, time_s)
+        features.extend(stats)
         names.extend(f"uwb_{label}_{stat}" for stat in STAT_NAMES)
+        stds[label] = stats[STAT_NAMES.index("std")]
         trajectory = resample_vector(arr, trajectory_points)
+        trajectories[label] = trajectory
         features.extend(float(v) for v in trajectory)
         names.extend(f"uwb_{label}_t{i:02d}" for i in range(trajectory_points))
+    features.extend(
+        uwb_asymmetry_features(stds["left"], stds["right"], trajectories["left"], trajectories["right"])
+    )
+    names.extend(("uwb_asym_std_ratio", "uwb_asym_std_diff", "uwb_asym_corr"))
     return features, names
 
 

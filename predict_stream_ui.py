@@ -282,7 +282,11 @@ def main() -> int:
         print("\n\nStopping...")
     finally:
         stop_event.set()
-        server.shutdown()
+        # serve_forever() has already returned here (including when Ctrl+C
+        # interrupted it).  Calling shutdown() from that same thread can
+        # deadlock, which previously prevented reader.stop() below from
+        # sending the UWB controller's graceful session-stop command.
+        server.server_close()
         for reader in readers.values():
             reader.stop()
 

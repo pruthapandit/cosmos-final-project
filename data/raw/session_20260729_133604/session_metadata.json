@@ -1,0 +1,17 @@
+{
+  "created_at": "20260729_133604",
+  "collector": "Evelyn",
+  "sensors": [
+    "imu",
+    "mmwave",
+    "uwb"
+  ],
+  "gestures": [
+    "Clapping"
+  ],
+  "shuffled": true,
+  "shuffle_seed": null,
+  "trial_order": [
+    "Clapping"
+  ]
+}

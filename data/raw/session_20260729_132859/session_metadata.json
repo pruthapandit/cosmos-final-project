@@ -1,0 +1,33 @@
+{
+  "created_at": "20260729_132859",
+  "collector": "Evelyn",
+  "sensors": [
+    "imu",
+    "mmwave",
+    "uwb"
+  ],
+  "gestures": [
+    "Palm Up-Down",
+    "Making Fist and Open",
+    "Clapping"
+  ],
+  "shuffled": true,
+  "shuffle_seed": null,
+  "trial_order": [
+    "Clapping",
+    "Making Fist and Open",
+    "Making Fist and Open",
+    "Making Fist and Open",
+    "Palm Up-Down",
+    "Clapping",
+    "Clapping",
+    "Palm Up-Down",
+    "Clapping",
+    "Making Fist and Open",
+    "Palm Up-Down",
+    "Making Fist and Open",
+    "Palm Up-Down",
+    "Clapping",
+    "Palm Up-Down"
+  ]
+}

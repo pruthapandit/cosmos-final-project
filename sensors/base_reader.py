@@ -42,9 +42,18 @@ class BaseSensorReader(abc.ABC):
     def start(self) -> None:
         """Open the device and start the background reader thread."""
         self._stop_event.clear()
-        self._open()
-        self._thread = threading.Thread(target=self._run, daemon=True, name=f"{self.name}-reader")
-        self._thread.start()
+        try:
+            self._open()
+            self._thread = threading.Thread(target=self._run, daemon=True, name=f"{self.name}-reader")
+            self._thread.start()
+        except BaseException:
+            # Startup can be interrupted after a device/subprocess has been
+            # opened (notably during the UWB controlee startup delay).  Do
+            # not leave that partial session running or its serial port held.
+            self._stop_event.set()
+            self._close()
+            self._thread = None
+            raise
 
     def stop(self) -> None:
         """Stop the reader thread and release the device."""

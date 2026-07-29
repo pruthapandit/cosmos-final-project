@@ -43,7 +43,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--trial-seconds", type=float, default=2.0)
     parser.add_argument("--top-k", type=int, default=3)
     parser.add_argument(
-        "--reject-threshold", type=float, default=0.4,
+        "--reject-threshold", type=float, default=0.45,
         help="If the top class's probability is below this, report 'None' instead of forcing a "
         "guess. 0 disables rejection.",
     )
@@ -300,7 +300,10 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\n\nStopping...")
     finally:
-        server.shutdown()
+        # serve_forever() has already returned here.  shutdown() must be
+        # invoked from a different thread, otherwise it can deadlock and
+        # prevent the UWB reader from closing its FiRa session.
+        server.server_close()
         for reader in readers.values():
             reader.stop()
 
