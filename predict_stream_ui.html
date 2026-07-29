@@ -2,91 +2,202 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<title>Gesture Recognition -- Live Demo</title>
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gesture Recognition — Live Demo</title>
 <style>
   :root {
-    --bg: #0b0f16;
-    --panel: #131a24;
-    --panel-border: #232d3d;
-    --text: #e8edf5;
-    --muted: #8a96a8;
-    --accent: #4f8cff;
-    --idle: #3a4759;
-    --good: #34d399;
-    --warn: #f5b942;
+    --bg-plane:     #eef0fb;
+    --panel:        rgba(255, 255, 255, 0.66);
+    --panel-solid:  #ffffff;
+    --panel-border: rgba(124, 108, 199, 0.18);
+    --text:         #3b3560;
+    --text-2:       #6b6390;
+    --muted:        #9b93b8;
+    --grid:         #e2e0f5;
+    --baseline:     #d4d0ef;
+
+    --series-right: #7fa8f2;   /* categorical slot 1 (pastel blue) */
+    --series-left:  #b48ce0;   /* categorical slot 2 (pastel purple) */
+
+    --status-good:     #7cc99a;
+    --status-warning:  #f0bd6c;
+    --status-critical: #e78a95;
+
+    --radius-lg: 20px;
+    --radius-md: 14px;
+    --radius-sm: 10px;
   }
   * { box-sizing: border-box; }
   html, body {
-    margin: 0; padding: 0; height: 100%;
-    background: var(--bg); color: var(--text);
-    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+    margin: 0; padding: 0; min-height: 100%;
+    background: var(--bg-plane); color: var(--text);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
     overflow-x: hidden;
   }
-  .wrap { max-width: 1200px; margin: 0 auto; padding: 20px 24px 40px; }
-  header {
-    display: flex; justify-content: space-between; align-items: baseline;
-    margin-bottom: 18px; flex-wrap: wrap; gap: 8px;
+  body {
+    background-image:
+      radial-gradient(circle at 15% 0%, rgba(127,168,242,0.28), transparent 45%),
+      radial-gradient(circle at 85% 8%, rgba(180,140,224,0.24), transparent 40%),
+      radial-gradient(1px 1px at 20px 20px, rgba(90,80,150,0.06) 1px, transparent 0),
+      radial-gradient(1px 1px at 60px 70px, rgba(90,80,150,0.06) 1px, transparent 0);
+    background-size: auto, auto, 44px 44px, 44px 44px;
+    background-attachment: fixed;
   }
-  header h1 { font-size: 18px; font-weight: 600; margin: 0; color: var(--muted); letter-spacing: 0.02em; }
-  header .meta { font-size: 13px; color: var(--muted); }
-  header .meta b { color: var(--text); }
+  .wrap { max-width: 1180px; margin: 0 auto; padding: 28px 24px 48px; }
+
+  header {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 22px; flex-wrap: wrap; gap: 10px;
+  }
+  .brand { display: flex; align-items: center; gap: 10px; }
+  header h1 {
+    font-size: 15px; font-weight: 600; margin: 0; color: var(--text-2);
+    letter-spacing: 0.02em; text-transform: uppercase; display: flex; align-items: center;
+  }
+  header .meta {
+    font-size: 12.5px; color: var(--muted); display: flex; align-items: center; gap: 14px;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 999px;
+    padding: 7px 14px; backdrop-filter: blur(10px);
+  }
+  header .meta b { color: var(--text); font-weight: 600; }
+  header .meta .sep { width: 1px; height: 12px; background: var(--panel-border); }
 
   .predict-card {
-    background: var(--panel); border: 1px solid var(--panel-border); border-radius: 18px;
-    padding: 36px 24px; text-align: center; margin-bottom: 20px;
-    transition: box-shadow 0.3s ease;
+    position: relative;
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius-lg);
+    padding: 44px 24px 32px; text-align: center; margin-bottom: 20px;
+    backdrop-filter: blur(14px);
+    box-shadow: 0 20px 50px -20px rgba(124,108,199,0.28);
+    transition: box-shadow 0.35s ease, border-color 0.35s ease;
+    overflow: hidden;
   }
-  .predict-card.flash { box-shadow: 0 0 0 3px var(--accent-glow, rgba(79,140,255,0.35)); }
-  .predict-label { font-size: 13px; text-transform: uppercase; letter-spacing: 0.12em; color: var(--muted); margin-bottom: 10px; }
+  .predict-card::before {
+    content: ""; position: absolute; inset: 0; opacity: 0; transition: opacity 0.4s ease;
+    background: radial-gradient(circle at 50% -10%, var(--glow-color, rgba(127,168,242,0.32)), transparent 60%);
+    pointer-events: none;
+  }
+  .predict-card.active::before { opacity: 1; }
+  .predict-card.flash { border-color: var(--glow-color, rgba(127,168,242,0.55)); }
+  .predict-card.flash::before { opacity: 1; }
+
+  .predict-icon {
+    font-size: 30px; margin-bottom: 4px; opacity: 0.9;
+    filter: drop-shadow(0 2px 6px rgba(124,108,199,0.28));
+  }
+  .predict-label {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.16em; color: var(--muted);
+    margin-bottom: 12px; font-weight: 600;
+  }
   .predict-gesture {
-    font-size: 56px; font-weight: 700; line-height: 1.1;
-    transition: color 0.25s ease;
+    position: relative; font-size: 58px; font-weight: 700; line-height: 1.1;
+    letter-spacing: -0.01em;
+    transition: color 0.3s ease;
   }
-  .predict-gesture.idle { color: var(--idle); }
-  .predict-gesture.active { color: var(--good); }
-  .predict-gesture.none-match { color: var(--warn); }
-  .confidence-row { margin-top: 16px; display: flex; align-items: center; justify-content: center; gap: 10px; }
+  .predict-gesture.idle { color: var(--muted); }
+  .predict-gesture.active {
+    background: linear-gradient(135deg, var(--series-left) 15%, var(--series-right) 130%);
+    -webkit-background-clip: text; background-clip: text; color: transparent;
+  }
+  .predict-gesture.none-match { color: var(--status-warning); }
+
+  .confidence-row { margin-top: 22px; display: flex; align-items: center; justify-content: center; gap: 12px; }
   .confidence-bar-outer {
-    width: 260px; height: 10px; border-radius: 6px; background: #1c2532; overflow: hidden;
-  }
-  .confidence-bar-inner {
-    height: 100%; background: linear-gradient(90deg, var(--accent), var(--good));
-    width: 0%; transition: width 0.2s ease;
-  }
-  .confidence-pct { font-size: 13px; color: var(--muted); min-width: 42px; text-align: left; }
-
-  .panel { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; padding: 16px 18px; }
-  .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
-  canvas { width: 100%; height: 140px; display: block; }
-
-  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; }
-  .bar-row .name { width: 150px; flex-shrink: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  .bar-row .track { flex: 1; height: 8px; border-radius: 5px; background: #1c2532; overflow: hidden; }
-  .bar-row .fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s ease; }
-  .bar-row .pct { width: 40px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
-
-  .history { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
-  .chip {
-    padding: 5px 10px; border-radius: 999px; font-size: 12px; background: #1c2532; color: var(--muted);
+    position: relative; width: 280px; height: 10px; border-radius: 999px;
+    background: rgba(124,108,199,0.10); overflow: hidden;
     border: 1px solid var(--panel-border);
   }
-  .chip.latest { background: rgba(79,140,255,0.15); color: var(--text); border-color: var(--accent); }
+  .confidence-bar-inner {
+    position: relative; height: 100%; border-radius: 999px;
+    background: linear-gradient(90deg, var(--series-right), var(--status-good));
+    width: 0%; transition: width 0.25s cubic-bezier(.2,.8,.2,1);
+  }
+  .confidence-bar-inner::after {
+    content: ""; position: absolute; inset: 0;
+    background: linear-gradient(90deg, transparent, rgba(255,255,255,0.35), transparent);
+    width: 40px; animation: shimmer 1.8s ease-in-out infinite;
+  }
+  @keyframes shimmer {
+    0%   { transform: translateX(-40px); }
+    100% { transform: translateX(280px); }
+  }
+  .confidence-pct {
+    font-size: 13px; color: var(--text-2); min-width: 42px; text-align: left;
+    font-variant-numeric: tabular-nums; font-weight: 600;
+  }
 
-  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 6px; }
-  .status-dot.live { background: var(--good); box-shadow: 0 0 6px var(--good); }
-  .status-dot.down { background: #6b7684; }
+  .history { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 20px; justify-content: center; }
+  .chip {
+    padding: 5px 12px; border-radius: 999px; font-size: 12px; background: rgba(124,108,199,0.08);
+    color: var(--muted); border: 1px solid var(--panel-border);
+    animation: chip-in 0.3s ease;
+  }
+  .chip.latest {
+    background: rgba(127,168,242,0.24); color: var(--text); border-color: var(--series-right);
+  }
+  @keyframes chip-in {
+    from { opacity: 0; transform: translateY(4px) scale(0.92); }
+    to   { opacity: 1; transform: translateY(0) scale(1); }
+  }
+
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 760px) { .grid-2 { grid-template-columns: 1fr; } }
+
+  .panel {
+    background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius-md);
+    padding: 18px 20px; backdrop-filter: blur(14px);
+    box-shadow: 0 12px 30px -18px rgba(124,108,199,0.25);
+  }
+  .panel h2 {
+    font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
+    margin: 0 0 14px; font-weight: 700; display: flex; align-items: center; justify-content: space-between;
+  }
+  .legend { display: flex; gap: 12px; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); }
+  .legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+  canvas { width: 100%; height: 150px; display: block; }
+
+  .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; }
+  .bar-row:last-child { margin-bottom: 0; }
+  .bar-row .rank {
+    width: 18px; height: 18px; border-radius: 6px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 10px; font-weight: 700; color: var(--muted);
+    background: rgba(124,108,199,0.08); border: 1px solid var(--panel-border);
+  }
+  .bar-row:first-child .rank { color: #ffffff; background: var(--series-right); border-color: var(--series-right); }
+  .bar-row .name { width: 152px; flex-shrink: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .bar-row .track { flex: 1; height: 8px; border-radius: 999px; background: rgba(124,108,199,0.10); overflow: hidden; }
+  .bar-row .fill {
+    height: 100%; border-radius: 999px; width: 0%;
+    background: linear-gradient(90deg, var(--series-right), #c3d8fa);
+    transition: width 0.25s cubic-bezier(.2,.8,.2,1);
+  }
+  .bar-row:first-child .fill { background: linear-gradient(90deg, var(--series-right), var(--status-good)); }
+  .bar-row .pct { width: 38px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; font-weight: 600; }
+
+  .status-dot { display: inline-block; width: 8px; height: 8px; border-radius: 50%; margin-right: 7px; }
+  .status-dot.live { background: var(--status-good); box-shadow: 0 0 0 3px rgba(124,201,154,0.32); animation: pulse 1.6s ease-in-out infinite; }
+  .status-dot.down { background: var(--muted); }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 3px rgba(124,201,154,0.32); }
+    50%      { box-shadow: 0 0 0 6px rgba(124,201,154,0.10); }
+  }
 </style>
 </head>
 <body>
 <div class="wrap">
   <header>
-    <h1><span class="status-dot down" id="statusDot"></span>Gesture Recognition -- Live Demo</h1>
-    <div class="meta" id="modelMeta">connecting...</div>
+    <div class="brand">
+      <h1><span class="status-dot down" id="statusDot"></span>Gesture Recognition — Live Demo</h1>
+    </div>
+    <div class="meta" id="modelMeta">connecting…</div>
   </header>
 
   <div class="predict-card" id="predictCard">
+    <div class="predict-icon" id="predictIcon">◌</div>
     <div class="predict-label">Current Prediction</div>
-    <div class="predict-gesture idle" id="predictGesture">--</div>
+    <div class="predict-gesture idle" id="predictGesture">—</div>
     <div class="confidence-row">
       <div class="confidence-bar-outer"><div class="confidence-bar-inner" id="confBar"></div></div>
       <div class="confidence-pct" id="confPct">0%</div>
@@ -94,19 +205,28 @@
     <div class="history" id="history"></div>
   </div>
 
-  <div class="panel">
-    <h2>Top Candidates (this tick)</h2>
-    <div id="top3"></div>
-  </div>
+  <div class="grid-2">
+    <div class="panel">
+      <h2>Top Candidates<span style="font-weight:500;color:var(--muted);text-transform:none;letter-spacing:0;">this tick</span></h2>
+      <div id="top3"></div>
+    </div>
 
-  <div class="panel" style="margin-top: 18px;">
-    <h2>UWB Wrist Distance (cm) -- right (blue) / left (orange)</h2>
-    <canvas id="uwbChart" width="900" height="140"></canvas>
+    <div class="panel">
+      <h2>
+        UWB Wrist Distance
+        <span class="legend">
+          <span><i style="background:var(--series-right)"></i>Right</span>
+          <span><i style="background:var(--series-left)"></i>Left</span>
+        </span>
+      </h2>
+      <canvas id="uwbChart" width="900" height="150"></canvas>
+    </div>
   </div>
 </div>
 
 <script>
 const gestureEl = document.getElementById('predictGesture');
+const iconEl = document.getElementById('predictIcon');
 const cardEl = document.getElementById('predictCard');
 const confBar = document.getElementById('confBar');
 const confPct = document.getElementById('confPct');
@@ -117,44 +237,108 @@ const statusDot = document.getElementById('statusDot');
 
 let lastGesture = null;
 
+const ICONS = {
+  'Idle': '◌', 'None': '❓',
+  'Push': '👉', 'Pull': '👈', 'Clockwise': '↻', 'Anti-clockwise': '↺',
+  'Right': '➡️', 'Left': '⬅️', 'Bye-Bye': '👋', 'One-Arm Boxing': '🥊',
+  'Two-Arm Boxing': '🥊', 'Clapping': '👏', 'T-Arm': '🤸', 'Raise Arms': '🙌',
+  'Soli': '🖐️', 'Making Fist and Open': '✊', 'Palm Up-Down': '🤚',
+};
+
 function drawLineChart(canvas, series, colors) {
   const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || 900, cssH = canvas.clientHeight || 150;
+  if (canvas.width !== cssW * dpr || canvas.height !== cssH * dpr) {
+    canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const w = cssW, h = cssH;
   ctx.clearRect(0, 0, w, h);
+
   const lines = Array.isArray(series[0]) ? series : [series];
+  const padL = 6, padR = 6, padT = 10, padB = 8;
+  const gridColor = getComputedStyle(document.documentElement).getPropertyValue('--grid').trim();
+
+  // horizontal gridlines (recessive hairlines)
+  ctx.strokeStyle = gridColor;
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) {
+    const y = padT + (i / 3) * (h - padT - padB);
+    ctx.beginPath();
+    ctx.moveTo(padL, Math.round(y) + 0.5);
+    ctx.lineTo(w - padR, Math.round(y) + 0.5);
+    ctx.stroke();
+  }
+
   if (!lines.some(l => l && l.length >= 2)) return;
   let allVals = [];
   lines.forEach(l => { if (l) allVals = allVals.concat(l); });
   let min = Math.min(...allVals), max = Math.max(...allVals);
   if (max - min < 1e-6) max = min + 1;
-  const pad = 8;
+  const span = max - min;
+  min -= span * 0.08; max += span * 0.08;
+
   lines.forEach((line, li) => {
     if (!line || line.length < 2) return;
+    const color = colors[li % colors.length];
+    const pts = line.map((v, i) => ({
+      x: padL + (i / (line.length - 1)) * (w - padL - padR),
+      y: padT + (h - padT - padB) - ((v - min) / (max - min)) * (h - padT - padB),
+    }));
+
+    // area wash under the line (~10% opacity)
     ctx.beginPath();
-    ctx.strokeStyle = colors[li % colors.length];
+    ctx.moveTo(pts[0].x, h - padB);
+    pts.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.lineTo(pts[pts.length - 1].x, h - padB);
+    ctx.closePath();
+    ctx.fillStyle = color + '1A';
+    ctx.fill();
+
+    // line, 2px, rounded joins
+    ctx.beginPath();
+    ctx.strokeStyle = color;
     ctx.lineWidth = 2;
-    line.forEach((v, i) => {
-      const x = pad + (i / (line.length - 1)) * (w - 2 * pad);
-      const y = h - pad - ((v - min) / (max - min)) * (h - 2 * pad);
-      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-    });
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
     ctx.stroke();
+
+    // end marker with surface ring
+    const last = pts[pts.length - 1];
+    ctx.beginPath();
+    ctx.arc(last.x, last.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--panel-solid').trim();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
   });
 }
 
 function setGesture(name, kind) {
   gestureEl.textContent = name === 'None' ? 'None (unrecognized)' : name;
   gestureEl.className = 'predict-gesture ' + kind;
+  iconEl.textContent = ICONS[name] || '✨';
+  cardEl.classList.toggle('active', kind === 'active');
+
+  const glow = kind === 'active' ? 'rgba(124,201,154,0.32)'
+    : kind === 'none-match' ? 'rgba(240,189,108,0.28)'
+    : 'rgba(127,168,242,0.28)';
+  cardEl.style.setProperty('--glow-color', glow);
+
   if (name !== lastGesture) {
     cardEl.classList.add('flash');
-    setTimeout(() => cardEl.classList.remove('flash'), 400);
+    setTimeout(() => cardEl.classList.remove('flash'), 450);
     lastGesture = name;
   }
 }
 
 function render(data) {
   statusDot.className = 'status-dot live';
-  modelMetaEl.innerHTML = `sensors: <b>${data.sensors.join('+')}</b> &nbsp;|&nbsp; trained accuracy: <b>${(data.model_accuracy*100).toFixed(1)}%</b>`;
+  modelMetaEl.innerHTML = `<span>sensors&nbsp;<b>${data.sensors.join('+')}</b></span><span class="sep"></span><span>trained accuracy&nbsp;<b>${(data.model_accuracy*100).toFixed(1)}%</b></span>`;
 
   const kind = data.prediction === 'Idle' ? 'idle' : (data.prediction === 'None' ? 'none-match' : 'active');
   setGesture(data.prediction, kind);
@@ -163,10 +347,10 @@ function render(data) {
   confPct.textContent = pct + '%';
 
   top3El.innerHTML = '';
-  (data.top3 || []).forEach(([label, prob]) => {
+  (data.top3 || []).forEach(([label, prob], i) => {
     const row = document.createElement('div');
     row.className = 'bar-row';
-    row.innerHTML = `<div class="name">${label}</div><div class="track"><div class="fill" style="width:${(prob*100).toFixed(0)}%"></div></div><div class="pct">${(prob*100).toFixed(0)}%</div>`;
+    row.innerHTML = `<div class="rank">${i + 1}</div><div class="name">${label}</div><div class="track"><div class="fill" style="width:${(prob*100).toFixed(0)}%"></div></div><div class="pct">${(prob*100).toFixed(0)}%</div>`;
     top3El.appendChild(row);
   });
 
@@ -179,7 +363,9 @@ function render(data) {
   });
 
   drawLineChart(document.getElementById('uwbChart'),
-    [data.uwb_right_series || [], data.uwb_left_series || []], ['#4f8cff', '#f5b942']);
+    [data.uwb_right_series || [], data.uwb_left_series || []],
+    [getComputedStyle(document.documentElement).getPropertyValue('--series-right').trim(),
+     getComputedStyle(document.documentElement).getPropertyValue('--series-left').trim()]);
 }
 
 function connect() {
