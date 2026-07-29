@@ -1,0 +1,36 @@
+{
+  "collector_counts": {
+    "eric": 169,
+    "shanmu": 150
+  },
+  "collector_filter": null,
+  "combined_from": [
+    "C:\\Users\\Prutha Pandit\\cosmos_final_project\\data\\raw\\session_20260724_131536",
+    "C:\\Users\\Prutha Pandit\\cosmos_final_project\\data\\raw\\session_20260724_161748",
+    "C:\\Users\\Prutha Pandit\\cosmos_final_project\\data\\raw\\session_20260726_142402",
+    "C:\\Users\\Prutha Pandit\\cosmos_final_project\\data\\raw\\session_20260726_145403"
+  ],
+  "created_at": "2026-07-26 14:57:38",
+  "dataset_name": "gesture_eric_shanmu_v1",
+  "gesture_counts": {
+    "Anti-clockwise": 20,
+    "Bye-Bye": 20,
+    "Clapping": 28,
+    "Clockwise": 20,
+    "Left": 28,
+    "Making Fist and Open": 20,
+    "One-Arm Boxing": 20,
+    "Palm Up-Down": 20,
+    "Pull": 18,
+    "Push": 17,
+    "Raise Arms": 20,
+    "Right": 28,
+    "Soli": 20,
+    "T-Arm": 20,
+    "Two-Arm Boxing": 20
+  },
+  "gesture_filter": null,
+  "include_rejected": false,
+  "row_count": 319,
+  "skipped": []
+}

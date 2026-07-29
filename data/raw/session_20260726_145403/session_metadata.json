@@ -1,0 +1,37 @@
+{
+  "created_at": "20260726_145403",
+  "collector": "shanmu",
+  "sensors": [
+    "imu",
+    "mmwave",
+    "uwb"
+  ],
+  "gestures": [
+    "Push",
+    "Pull"
+  ],
+  "shuffled": false,
+  "shuffle_seed": null,
+  "trial_order": [
+    "Push",
+    "Push",
+    "Push",
+    "Push",
+    "Push",
+    "Push",
+    "Push",
+    "Push",
+    "Push",
+    "Push",
+    "Pull",
+    "Pull",
+    "Pull",
+    "Pull",
+    "Pull",
+    "Pull",
+    "Pull",
+    "Pull",
+    "Pull",
+    "Pull"
+  ]
+}

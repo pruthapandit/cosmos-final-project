@@ -1,0 +1,26 @@
+{
+  "created_at": "20260727_152419",
+  "collector": "fiona",
+  "sensors": [
+    "imu",
+    "mmwave",
+    "uwb"
+  ],
+  "gestures": [
+    "Idle"
+  ],
+  "shuffled": false,
+  "shuffle_seed": null,
+  "trial_order": [
+    "Idle",
+    "Idle",
+    "Idle",
+    "Idle",
+    "Idle",
+    "Idle",
+    "Idle",
+    "Idle",
+    "Idle",
+    "Idle"
+  ]
+}

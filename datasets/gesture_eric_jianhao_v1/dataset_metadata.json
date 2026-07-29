@@ -1,0 +1,24 @@
+{
+  "collector_counts": {
+    "eric": 39,
+    "jianhao": 40
+  },
+  "collector_filter": null,
+  "combined_from": [
+    "C:\\Users\\Prutha Pandit\\cosmos_final_project\\data\\raw\\session_20260724_131536",
+    "C:\\Users\\Prutha Pandit\\cosmos_final_project\\data\\raw\\session_20260724_135750"
+  ],
+  "created_at": "2026-07-24 14:07:00",
+  "dataset_name": "gesture_eric_jianhao_v1",
+  "gesture_counts": {
+    "Clapping": 16,
+    "Left": 16,
+    "Pull": 16,
+    "Push": 15,
+    "Right": 16
+  },
+  "gesture_filter": null,
+  "include_rejected": false,
+  "row_count": 79,
+  "skipped": []
+}

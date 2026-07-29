@@ -1,0 +1,14 @@
+{
+  "created_at": "20260723_114312",
+  "collector": "yourname",
+  "sensors": [
+    "imu",
+    "mmwave"
+  ],
+  "gestures": [
+    "Pull",
+    "Push",
+    "Right",
+    "Left"
+  ]
+}

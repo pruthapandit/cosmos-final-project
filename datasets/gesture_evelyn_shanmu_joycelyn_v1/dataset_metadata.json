@@ -1,0 +1,36 @@
+{
+  "collector_counts": {
+    "evelyn": 150,
+    "joycelyn": 150,
+    "shanmu": 150
+  },
+  "collector_filter": null,
+  "combined_from": [
+    "C:\\Users\\Prutha Pandit\\cosmos_final_project\\data\\raw\\session_20260726_154516",
+    "C:\\Users\\Prutha Pandit\\cosmos_final_project\\data\\raw\\session_20260726_161036",
+    "C:\\Users\\Prutha Pandit\\cosmos_final_project\\data\\raw\\session_20260726_162953"
+  ],
+  "created_at": "2026-07-26 16:53:36",
+  "dataset_name": "gesture_evelyn_shanmu_joycelyn_v1",
+  "gesture_counts": {
+    "Anti-clockwise": 30,
+    "Bye-Bye": 30,
+    "Clapping": 30,
+    "Clockwise": 30,
+    "Left": 30,
+    "Making Fist and Open": 30,
+    "One-Arm Boxing": 30,
+    "Palm Up-Down": 30,
+    "Pull": 30,
+    "Push": 30,
+    "Raise Arms": 30,
+    "Right": 30,
+    "Soli": 30,
+    "T-Arm": 30,
+    "Two-Arm Boxing": 30
+  },
+  "gesture_filter": null,
+  "include_rejected": false,
+  "row_count": 450,
+  "skipped": []
+}

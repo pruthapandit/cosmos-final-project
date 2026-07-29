@@ -1,0 +1,33 @@
+{
+  "collector_counts": {
+    "eric": 169
+  },
+  "collector_filter": null,
+  "combined_from": [
+    "C:\\Users\\Prutha Pandit\\cosmos_final_project\\data\\raw\\session_20260724_131536",
+    "C:\\Users\\Prutha Pandit\\cosmos_final_project\\data\\raw\\session_20260724_161748"
+  ],
+  "created_at": "2026-07-24 16:39:09",
+  "dataset_name": "gesture_eric_full_v1",
+  "gesture_counts": {
+    "Anti-clockwise": 10,
+    "Bye-Bye": 10,
+    "Clapping": 18,
+    "Clockwise": 10,
+    "Left": 18,
+    "Making Fist and Open": 10,
+    "One-Arm Boxing": 10,
+    "Palm Up-Down": 10,
+    "Pull": 8,
+    "Push": 7,
+    "Raise Arms": 10,
+    "Right": 18,
+    "Soli": 10,
+    "T-Arm": 10,
+    "Two-Arm Boxing": 10
+  },
+  "gesture_filter": null,
+  "include_rejected": false,
+  "row_count": 169,
+  "skipped": []
+}

@@ -1,0 +1,22 @@
+{
+  "collector_counts": {
+    "yourname": 15
+  },
+  "collector_filter": null,
+  "combined_from": [
+    "C:\\Users\\Prutha Pandit\\cosmos_final_project\\data\\raw\\session_20260724_112718"
+  ],
+  "created_at": "2026-07-24 11:35:30",
+  "dataset_name": "gesture_test_v3",
+  "gesture_counts": {
+    "Clapping": 3,
+    "Left": 3,
+    "Pull": 3,
+    "Push": 3,
+    "Right": 3
+  },
+  "gesture_filter": null,
+  "include_rejected": false,
+  "row_count": 15,
+  "skipped": []
+}
