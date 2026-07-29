@@ -71,7 +71,57 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--uwb-slots-per-rr", type=int, default=25)
     parser.add_argument("--uwb-ranging-span", type=int, default=50)
     parser.add_argument("--uwb-startup-delay", type=float, default=5.0)
+    parser.add_argument(
+        "--uwb-plot-dir",
+        type=Path,
+        default=Path("captures") / "uwb",
+        help="Folder where each UWB-enabled capture's wrist-distance plot is saved.",
+    )
     return parser.parse_args()
+
+
+def save_uwb_plot(
+    data: dict[str, Any], output_dir: Path, prediction: str, confidence: float
+) -> Path | None:
+    """Save the UWB samples from one capture as a timestamped PNG."""
+    time_s = np.asarray(data.get("uwb_time_s", []), dtype=float)
+    right = np.asarray(data.get("uwb_right_distance_cm", []), dtype=float)
+    left = np.asarray(data.get("uwb_left_distance_cm", []), dtype=float)
+    count = min(len(time_s), len(right), len(left))
+    if count == 0:
+        return None
+
+    time_s, right, left = time_s[:count], right[:count], left[:count]
+    right_valid = np.isfinite(time_s) & np.isfinite(right)
+    left_valid = np.isfinite(time_s) & np.isfinite(left)
+    if not right_valid.any() and not left_valid.any():
+        return None
+
+    # Keep the web server's plotting independent of a desktop GUI backend.
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    output_dir = output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+    filename = f"uwb_capture_{time.strftime('%Y%m%d_%H%M%S')}_{time.time_ns() % 1_000_000_000:09d}.png"
+    output_path = output_dir / filename
+
+    figure, axis = plt.subplots(figsize=(8, 4.5))
+    if right_valid.any():
+        axis.plot(time_s[right_valid], right[right_valid], "o-", label="Right wrist", color="#4f8cff")
+    if left_valid.any():
+        axis.plot(time_s[left_valid], left[left_valid], "o-", label="Left wrist", color="#f59e0b")
+    axis.set_title(f"UWB capture — {prediction} ({confidence:.1%})")
+    axis.set_xlabel("Time since capture start (s)")
+    axis.set_ylabel("Distance (cm)")
+    axis.grid(True, alpha=0.25)
+    axis.legend()
+    figure.tight_layout()
+    figure.savefig(output_path, dpi=180)
+    plt.close(figure)
+    return output_path
 
 
 def do_one_recording(
@@ -82,6 +132,7 @@ def do_one_recording(
     top_k: int,
     reject_threshold: float,
     history: deque[str],
+    uwb_plot_dir: Path | None,
 ) -> dict[str, Any]:
     # Discard whatever queued up while idle so the window starts clean.
     for reader in readers.values():
@@ -125,6 +176,11 @@ def do_one_recording(
         prediction = top_k_list[0][0]
 
     history.append(prediction)
+    uwb_plot_path = (
+        save_uwb_plot(data, uwb_plot_dir, prediction, top_confidence)
+        if uwb_plot_dir is not None
+        else None
+    )
 
     return {
         "prediction": prediction,
@@ -133,6 +189,7 @@ def do_one_recording(
         "history": list(history),
         "uwb_right_series": uwb_right_series,
         "uwb_left_series": uwb_left_series,
+        "uwb_plot_file": str(uwb_plot_path) if uwb_plot_path else None,
     }
 
 
@@ -189,8 +246,11 @@ def make_handler(
                 with record_lock:
                     result = do_one_recording(
                         readers, model, feature_args, args.trial_seconds, args.top_k,
-                        args.reject_threshold, history
+                        args.reject_threshold, history,
+                        args.uwb_plot_dir if "uwb" in sensors else None,
                     )
+                if result["uwb_plot_file"]:
+                    print(f"Saved UWB plot: {result['uwb_plot_file']}")
                 self._send_json(result)
                 return
 
@@ -223,34 +283,26 @@ def main() -> int:
     history: deque[str] = deque(maxlen=10)
     record_lock = threading.Lock()
 
-    started_reader_names: list[str] = []
-    server: ThreadingHTTPServer | None = None
-    serving = False
+    for reader in readers.values():
+        reader.start()
+
+    server = ThreadingHTTPServer(
+        ("127.0.0.1", args.web_port),
+        make_handler(readers, model, feature_args, args, sensors, accuracy, history, record_lock),
+    )
+    url = f"http://127.0.0.1:{args.web_port}"
+    print(f"\nOpen {url} and click Record.  (Ctrl+C to stop)\n")
+    if not args.no_browser:
+        threading.Timer(0.5, lambda: webbrowser.open(url)).start()
+
     try:
-        for name, reader in readers.items():
-            reader.start()
-            started_reader_names.append(name)
-
-        server = ThreadingHTTPServer(
-            ("127.0.0.1", args.web_port),
-            make_handler(readers, model, feature_args, args, sensors, accuracy, history, record_lock),
-        )
-        url = f"http://127.0.0.1:{args.web_port}"
-        print(f"\nOpen {url} and click Record.  (Ctrl+C to stop)\n")
-        if not args.no_browser:
-            threading.Timer(0.5, lambda: webbrowser.open(url)).start()
-
-        serving = True
         server.serve_forever()
     except KeyboardInterrupt:
         print("\n\nStopping...")
     finally:
-        if server is not None:
-            if serving:
-                server.shutdown()
-            server.server_close()
-        for name in reversed(started_reader_names):
-            readers[name].stop()
+        server.shutdown()
+        for reader in readers.values():
+            reader.stop()
 
     return 0
 

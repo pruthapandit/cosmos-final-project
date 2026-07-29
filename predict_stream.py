@@ -113,19 +113,17 @@ def main() -> int:
     pending_candidate: str | None = None
     pending_count = 0
 
-    started_reader_names: list[str] = []
+    for reader in readers.values():
+        reader.start()
+
+    print(f"\nStreaming... (Ctrl+C to stop). Classifying the last {args.window_seconds:g}s every "
+          f"{args.tick_seconds:g}s. confidence<{args.confidence_threshold:.2f} reports 'None' "
+          f"(untrained/unrecognized motion); confidence>={args.confidence_threshold:.2f} needs "
+          f"{args.switch_to_gesture_votes} consecutive ticks to switch to a gesture "
+          f"({args.switch_to_idle_votes} to fall back to Idle/None); a single tick "
+          f">={args.high_confidence_threshold:.2f} switches immediately.\n")
+
     try:
-        for name, reader in readers.items():
-            reader.start()
-            started_reader_names.append(name)
-
-        print(f"\nStreaming... (Ctrl+C to stop). Classifying the last {args.window_seconds:g}s every "
-              f"{args.tick_seconds:g}s. confidence<{args.confidence_threshold:.2f} reports 'None' "
-              f"(untrained/unrecognized motion); confidence>={args.confidence_threshold:.2f} needs "
-              f"{args.switch_to_gesture_votes} consecutive ticks to switch to a gesture "
-              f"({args.switch_to_idle_votes} to fall back to Idle/None); a single tick "
-              f">={args.high_confidence_threshold:.2f} switches immediately.\n")
-
         while True:
             time.sleep(args.tick_seconds)
             now = time.monotonic()
@@ -194,8 +192,8 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\n\nStopping...")
     finally:
-        for name in reversed(started_reader_names):
-            readers[name].stop()
+        for reader in readers.values():
+            reader.stop()
 
     return 0
 

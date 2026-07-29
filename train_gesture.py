@@ -44,6 +44,12 @@ def parse_args() -> argparse.Namespace:
         help="Dataset folders created by combine_gesture_sessions.py.",
     )
     parser.add_argument(
+        "--collectors",
+        nargs="+",
+        default=None,
+        help="Only use trials recorded by these collectors. Defaults to every collector in the dataset.",
+    )
+    parser.add_argument(
         "--sensors",
         nargs="+",
         choices=["imu", "mmwave", "uwb"],
@@ -122,6 +128,12 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--knn-weights", choices=["uniform", "distance"], default="distance")
     parser.add_argument("--model-out")
     parser.add_argument("--confusion-out")
+    parser.add_argument(
+        "--refit-full",
+        action="store_true",
+        help="After reporting held-out evaluation, refit the saved model on every usable trial. "
+        "Use this for a deployment model so no collected data is left out.",
+    )
     return parser.parse_args()
 
 
@@ -475,6 +487,8 @@ def build_examples(dataset_dirs: list[Path], args: argparse.Namespace):
 
     for dataset_dir in dataset_dirs:
         for row in read_rows(dataset_dir):
+            if args.collectors is not None and row["collector"] not in args.collectors:
+                continue
             npz_path = Path(row["npz_path"])
             if not npz_path.exists():
                 skipped.append({"npz_path": str(npz_path), "reason": "missing npz"})
@@ -743,6 +757,11 @@ def main() -> int:
         y_test, predictions, labels=labels_order, output_dict=True, zero_division=0
     )
 
+    # Keep the held-out metrics above honest, then use the complete labelled
+    # dataset for the model that will actually be deployed live.
+    if args.refit_full:
+        model.fit(X, y)
+
     model_out = (
         Path(args.model_out).expanduser().resolve()
         if args.model_out
@@ -769,7 +788,10 @@ def main() -> int:
         "class_counts": class_counts,
         "labels_order": labels_order,
         "collectors": sorted(collectors),
+        "collector_filter": args.collectors,
         "accuracy": accuracy,
+        "refit_full": args.refit_full,
+        "fitted_trial_count": int(len(y) if args.refit_full else len(X_train)),
         "classification_report": report_dict,
         "confusion_matrix": matrix.tolist(),
         "datasets": [str(path) for path in dataset_dirs],
@@ -804,6 +826,8 @@ def main() -> int:
     print(f"Class counts: {class_counts}")
     print(f"Feature count: {len(feature_names)}")
     print(f"Split mode: {split_mode}; train={len(X_train)}, test={len(X_test)}")
+    if args.refit_full:
+        print(f"Refit saved model on all {len(y)} usable trials after held-out evaluation.")
     if split_mode == "segment":
         print("Warning: split fell back to a plain stratified split (group split was too small).")
     if split_mode == "recording_fallback":

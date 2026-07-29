@@ -169,12 +169,10 @@ def main() -> int:
     feature_args = feature_args_from_payload(payload, sensors)
     readers = build_readers(sensors, args)
 
-    started_reader_names: list[str] = []
-    try:
-        for name, reader in readers.items():
-            reader.start()
-            started_reader_names.append(name)
+    for reader in readers.values():
+        reader.start()
 
+    try:
         while True:
             print(f"\nPress Enter to record a gesture ({args.trial_seconds:g}s), or Ctrl+C to quit...")
             input()
@@ -230,8 +228,8 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\n\nStopping...")
     finally:
-        for name in reversed(started_reader_names):
-            readers[name].stop()
+        for reader in readers.values():
+            reader.stop()
 
     return 0
 

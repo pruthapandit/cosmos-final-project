@@ -42,25 +42,17 @@ class BaseSensorReader(abc.ABC):
     def start(self) -> None:
         """Open the device and start the background reader thread."""
         self._stop_event.clear()
-        try:
-            self._open()
-        except BaseException:
-            self._stop_event.set()
-            self._close()
-            raise
+        self._open()
         self._thread = threading.Thread(target=self._run, daemon=True, name=f"{self.name}-reader")
         self._thread.start()
 
     def stop(self) -> None:
         """Stop the reader thread and release the device."""
         self._stop_event.set()
-        self._request_stop()
-        if self._thread is not None:
-            self._thread.join(timeout=2.0)
-        self._close()
         if self._thread is not None:
             self._thread.join(timeout=2.0)
             self._thread = None
+        self._close()
 
     # ---- consumption ----------------------------------------------------
     def drain(self) -> tuple[list[tuple[float, dict[str, Any]]], list[str]]:
@@ -93,9 +85,6 @@ class BaseSensorReader(abc.ABC):
     @abc.abstractmethod
     def _close(self) -> None:
         """Release the device. Called by stop()."""
-
-    def _request_stop(self) -> None:
-        """Interrupt blocking reads before stop() waits for the reader thread."""
 
     @abc.abstractmethod
     def _run(self) -> None:

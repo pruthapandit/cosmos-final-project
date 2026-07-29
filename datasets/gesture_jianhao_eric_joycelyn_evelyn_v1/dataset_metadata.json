@@ -1,0 +1,38 @@
+{
+  "collector_counts": {
+    "eric": 148,
+    "evelyn": 150,
+    "jianhao": 150,
+    "joycelyn": 150
+  },
+  "collector_filter": null,
+  "combined_from": [
+    "/Users/evelynwang/Downloads/cosmos-final-project-main/data/raw/session_20260727_101314",
+    "/Users/evelynwang/Downloads/cosmos-final-project-main/data/raw/session_20260726_154516",
+    "/Users/evelynwang/Downloads/cosmos-final-project-main/data/raw/session_20260726_162953",
+    "/Users/evelynwang/Downloads/cosmos-final-project-main/data/raw/session_20260727_104236"
+  ],
+  "created_at": "2026-07-29 10:24:12",
+  "dataset_name": "gesture_jianhao_eric_joycelyn_evelyn_v1",
+  "gesture_counts": {
+    "Anti-clockwise": 39,
+    "Bye-Bye": 40,
+    "Clapping": 40,
+    "Clockwise": 40,
+    "Left": 40,
+    "Making Fist and Open": 40,
+    "One-Arm Boxing": 40,
+    "Palm Up-Down": 40,
+    "Pull": 40,
+    "Push": 40,
+    "Raise Arms": 40,
+    "Right": 40,
+    "Soli": 39,
+    "T-Arm": 40,
+    "Two-Arm Boxing": 40
+  },
+  "gesture_filter": null,
+  "include_rejected": false,
+  "row_count": 598,
+  "skipped": []
+}
