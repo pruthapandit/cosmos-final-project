@@ -17,8 +17,6 @@ venv/
 env/
 
 # Runtime outputs and collected data
-data/
-datasets/
 sessions/
 models/
 logs/
