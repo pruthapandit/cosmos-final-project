@@ -3,14 +3,12 @@
 (predict_live.py's logic, with a nicer, screen-recordable dashboard instead
 of a terminal loop).
 
-Click "Record" in the browser -> POST /record blocks for --window-seconds
-while the ring countdown animates client-side; meanwhile the browser polls
-GET /live every ~150ms so the charts actually draw the signal as it's
-captured, not just a snapshot revealed at the end. A single background
-thread continuously drains the sensor readers into a rolling LiveBuffer --
-the sole consumer of reader.drain() -- so /live (polling) and /record
-(final classification) both read from that same buffer instead of racing
-each other over the raw queues.
+Click "Record" in the browser -> POST /record drains stale samples, sleeps
+--window-seconds while the ring countdown animates client-side (a plain
+CSS/JS timer, no server round-trips), drains the real window, classifies,
+and returns the result. No live chart polling -- keeping this to one
+request per capture keeps the hot path (drain/sleep/drain/classify) as fast
+as possible.
 """
 
 from __future__ import annotations
@@ -37,43 +35,6 @@ from predict_live import (
 )
 
 HTML_PATH = Path(__file__).with_name("predict_live_ui.html")
-BUFFER_SECONDS = 5.0  # rolling history kept per sensor, bounds memory
-
-
-class LiveBuffer:
-    """Continuously-fed rolling (t, fields) history per sensor.
-
-    One background thread is the only thing that ever calls reader.drain();
-    everything else (the /live poll, the final /record classification)
-    reads a windowed slice out of here instead, so nothing races over the
-    same queue.
-    """
-
-    def __init__(self, sensor_names: list[str]) -> None:
-        self._lock = threading.Lock()
-        self._buffers: dict[str, deque] = {name: deque() for name in sensor_names}
-
-    def ingest(self, name: str, samples: list[tuple[float, dict[str, Any]]]) -> None:
-        if not samples:
-            return
-        with self._lock:
-            buf = self._buffers[name]
-            buf.extend(samples)
-            cutoff = time.monotonic() - BUFFER_SECONDS
-            while buf and buf[0][0] < cutoff:
-                buf.popleft()
-
-    def window(self, name: str, t_start: float, t_end: float) -> list[tuple[float, dict[str, Any]]]:
-        with self._lock:
-            return [(t, f) for t, f in self._buffers[name] if t_start <= t <= t_end]
-
-
-def buffering_loop(readers: dict[str, Any], live_buffer: LiveBuffer, stop_event: threading.Event) -> None:
-    while not stop_event.is_set():
-        for name, reader in readers.items():
-            samples, _errors = reader.drain()
-            live_buffer.ingest(name, samples)
-        time.sleep(0.08)
 
 
 def parse_args() -> argparse.Namespace:
@@ -113,59 +74,8 @@ def parse_args() -> argparse.Namespace:
     return parser.parse_args()
 
 
-def windowed_chart_data(
-    live_buffer: LiveBuffer,
-    sensor_names: list[str],
-    feature_args: argparse.Namespace,
-    t_start: float,
-    t_end: float,
-) -> tuple[dict[str, Any], dict[str, Any]]:
-    """Slice [t_start, t_end] out of the live buffer, returning both the
-    feature-extraction-ready `data` dict and the chart-friendly series."""
-    data: dict[str, Any] = {}
-    gyro_series: list[float] = []
-    uwb_right_series: list[float] = []
-    uwb_left_series: list[float] = []
-    mmwave_profile: list[float] = []
-
-    for name in sensor_names:
-        samples = live_buffer.window(name, t_start, t_end)
-        if name == "imu":
-            data.update(build_imu_dict(samples, t_start))
-            gx = data.get("imu_gx", np.array([]))
-            gy = data.get("imu_gy", np.array([]))
-            gz = data.get("imu_gz", np.array([]))
-            if gx.size:
-                gyro_series = list(np.sqrt(gx**2 + gy**2 + gz**2).astype(float))
-        elif name == "mmwave":
-            data.update(build_mmwave_dict(samples, t_start))
-            profile = data.get("mmwave_range_profile")
-            if profile is not None and profile.size:
-                cropped = tg.crop_mmwave_range(
-                    profile, feature_args.mmwave_min_range_m,
-                    feature_args.mmwave_max_range_m, feature_args.mmwave_bin_spacing_m,
-                )
-                if cropped.size:
-                    mmwave_profile = [float(v) for v in cropped[-1]]
-        elif name == "uwb":
-            data.update(build_uwb_dict(samples, t_start))
-            right = data.get("uwb_right_distance_cm", np.array([]))
-            left = data.get("uwb_left_distance_cm", np.array([]))
-            uwb_right_series = [v for v in right.astype(float) if np.isfinite(v)]
-            uwb_left_series = [v for v in left.astype(float) if np.isfinite(v)]
-
-    charts = {
-        "gyro_series": gyro_series,
-        "uwb_right_series": uwb_right_series,
-        "uwb_left_series": uwb_left_series,
-        "mmwave_profile": mmwave_profile,
-    }
-    return data, charts
-
-
 def do_one_recording(
-    live_buffer: LiveBuffer,
-    sensor_names: list[str],
+    readers: dict[str, Any],
     model: Any,
     feature_args: argparse.Namespace,
     trial_seconds: float,
@@ -173,11 +83,30 @@ def do_one_recording(
     reject_threshold: float,
     history: deque[str],
 ) -> dict[str, Any]:
+    # Discard whatever queued up while idle so the window starts clean.
+    for reader in readers.values():
+        reader.drain()
+
     t_start = time.monotonic()
     time.sleep(trial_seconds)
     t_end = time.monotonic()
 
-    data, charts = windowed_chart_data(live_buffer, sensor_names, feature_args, t_start, t_end)
+    data: dict[str, Any] = {}
+    uwb_right_series: list[float] = []
+    uwb_left_series: list[float] = []
+    for name, reader in readers.items():
+        samples, _errors = reader.drain()
+        samples = [(t, f) for t, f in samples if t_start <= t <= t_end]
+        if name == "imu":
+            data.update(build_imu_dict(samples, t_start))
+        elif name == "mmwave":
+            data.update(build_mmwave_dict(samples, t_start))
+        elif name == "uwb":
+            data.update(build_uwb_dict(samples, t_start))
+            right = data.get("uwb_right_distance_cm", np.array([]))
+            left = data.get("uwb_left_distance_cm", np.array([]))
+            uwb_right_series = [v for v in right.astype(float) if np.isfinite(v)]
+            uwb_left_series = [v for v in left.astype(float) if np.isfinite(v)]
 
     features, _ = tg.extract_features(data, feature_args)
     X = np.asarray([features], dtype=float)
@@ -202,12 +131,13 @@ def do_one_recording(
         "confidence": top_confidence,
         "top3": top_k_list,
         "history": list(history),
-        **charts,
+        "uwb_right_series": uwb_right_series,
+        "uwb_left_series": uwb_left_series,
     }
 
 
 def make_handler(
-    live_buffer: LiveBuffer,
+    readers: dict[str, Any],
     model: Any,
     feature_args: argparse.Namespace,
     args: argparse.Namespace,
@@ -246,17 +176,6 @@ def make_handler(
                 })
                 return
 
-            if self.path == "/live":
-                # Polled every ~150ms by the frontend during the countdown,
-                # so the charts draw the signal as it's actually captured
-                # instead of only revealing it once /record finishes.
-                now = time.monotonic()
-                _data, charts = windowed_chart_data(
-                    live_buffer, sensors, feature_args, now - args.trial_seconds, now
-                )
-                self._send_json(charts)
-                return
-
             self.send_response(404)
             self.end_headers()
 
@@ -269,7 +188,7 @@ def make_handler(
                     return
                 with record_lock:
                     result = do_one_recording(
-                        live_buffer, sensors, model, feature_args, args.trial_seconds, args.top_k,
+                        readers, model, feature_args, args.trial_seconds, args.top_k,
                         args.reject_threshold, history
                     )
                 self._send_json(result)
@@ -303,20 +222,13 @@ def main() -> int:
     readers = build_readers(sensors, args)
     history: deque[str] = deque(maxlen=10)
     record_lock = threading.Lock()
-    live_buffer = LiveBuffer(sensors)
-    stop_event = threading.Event()
 
     for reader in readers.values():
         reader.start()
 
-    buffer_thread = threading.Thread(
-        target=buffering_loop, args=(readers, live_buffer, stop_event), daemon=True
-    )
-    buffer_thread.start()
-
     server = ThreadingHTTPServer(
         ("127.0.0.1", args.web_port),
-        make_handler(live_buffer, model, feature_args, args, sensors, accuracy, history, record_lock),
+        make_handler(readers, model, feature_args, args, sensors, accuracy, history, record_lock),
     )
     url = f"http://127.0.0.1:{args.web_port}"
     print(f"\nOpen {url} and click Record.  (Ctrl+C to stop)\n")
@@ -328,7 +240,6 @@ def main() -> int:
     except KeyboardInterrupt:
         print("\n\nStopping...")
     finally:
-        stop_event.set()
         server.shutdown()
         for reader in readers.values():
             reader.stop()

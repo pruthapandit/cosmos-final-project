@@ -55,19 +55,15 @@
   }
   .confidence-pct { font-size: 13px; color: var(--muted); min-width: 42px; text-align: left; }
 
-  .grid { display: grid; grid-template-columns: 1.1fr 1fr; gap: 18px; }
-  @media (max-width: 860px) { .grid { grid-template-columns: 1fr; } }
-
   .panel { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; padding: 16px 18px; }
   .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  canvas { width: 100%; height: 140px; display: block; }
 
   .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; }
   .bar-row .name { width: 150px; flex-shrink: 0; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bar-row .track { flex: 1; height: 8px; border-radius: 5px; background: #1c2532; overflow: hidden; }
   .bar-row .fill { height: 100%; background: var(--accent); width: 0%; transition: width 0.2s ease; }
   .bar-row .pct { width: 40px; text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
-
-  canvas { width: 100%; height: 140px; display: block; }
 
   .history { display: flex; gap: 6px; flex-wrap: wrap; margin-top: 10px; }
   .chip {
@@ -98,23 +94,14 @@
     <div class="history" id="history"></div>
   </div>
 
-  <div class="grid">
-    <div class="panel">
-      <h2>Top Candidates (this tick)</h2>
-      <div id="top3"></div>
-    </div>
-    <div class="panel">
-      <h2>Motion Energy (IMU gyro magnitude)</h2>
-      <canvas id="gyroChart" width="600" height="140"></canvas>
-    </div>
-    <div class="panel">
-      <h2>UWB Wrist Distance (cm)</h2>
-      <canvas id="uwbChart" width="600" height="140"></canvas>
-    </div>
-    <div class="panel">
-      <h2>mmWave Range Profile (latest frame, near field)</h2>
-      <canvas id="mmwaveChart" width="600" height="140"></canvas>
-    </div>
+  <div class="panel">
+    <h2>Top Candidates (this tick)</h2>
+    <div id="top3"></div>
+  </div>
+
+  <div class="panel" style="margin-top: 18px;">
+    <h2>UWB Wrist Distance (cm) -- right (blue) / left (orange)</h2>
+    <canvas id="uwbChart" width="900" height="140"></canvas>
   </div>
 </div>
 
@@ -130,21 +117,19 @@ const statusDot = document.getElementById('statusDot');
 
 let lastGesture = null;
 
-function drawLineChart(canvas, series, opts) {
+function drawLineChart(canvas, series, colors) {
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
-  if (!series || series.length < 2) return;
-
   const lines = Array.isArray(series[0]) ? series : [series];
-  const colors = opts && opts.colors ? opts.colors : ['#4f8cff', '#34d399'];
+  if (!lines.some(l => l && l.length >= 2)) return;
   let allVals = [];
-  lines.forEach(l => allVals = allVals.concat(l));
+  lines.forEach(l => { if (l) allVals = allVals.concat(l); });
   let min = Math.min(...allVals), max = Math.max(...allVals);
-  if (max - min < 1e-6) { max = min + 1; }
+  if (max - min < 1e-6) max = min + 1;
   const pad = 8;
-
   lines.forEach((line, li) => {
+    if (!line || line.length < 2) return;
     ctx.beginPath();
     ctx.strokeStyle = colors[li % colors.length];
     ctx.lineWidth = 2;
@@ -154,20 +139,6 @@ function drawLineChart(canvas, series, opts) {
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     ctx.stroke();
-  });
-}
-
-function drawBarProfile(canvas, values) {
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-  ctx.clearRect(0, 0, w, h);
-  if (!values || values.length === 0) return;
-  const max = Math.max(...values, 1e-6);
-  const barW = w / values.length;
-  ctx.fillStyle = '#4f8cff';
-  values.forEach((v, i) => {
-    const bh = (v / max) * (h - 8);
-    ctx.fillRect(i * barW, h - bh, Math.max(barW - 1, 1), bh);
   });
 }
 
@@ -207,9 +178,8 @@ function render(data) {
     historyEl.appendChild(chip);
   });
 
-  drawLineChart(document.getElementById('gyroChart'), data.gyro_series, {colors: ['#4f8cff']});
-  drawLineChart(document.getElementById('uwbChart'), [data.uwb_right_series || [], data.uwb_left_series || []], {colors: ['#4f8cff', '#f5b942']});
-  drawBarProfile(document.getElementById('mmwaveChart'), data.mmwave_profile || []);
+  drawLineChart(document.getElementById('uwbChart'),
+    [data.uwb_right_series || [], data.uwb_left_series || []], ['#4f8cff', '#f5b942']);
 }
 
 function connect() {

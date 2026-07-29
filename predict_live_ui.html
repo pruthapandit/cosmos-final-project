@@ -71,6 +71,7 @@
 
   .panel { background: var(--panel); border: 1px solid var(--panel-border); border-radius: 14px; padding: 16px 18px; text-align: left; }
   .panel h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); margin: 0 0 12px; font-weight: 600; }
+  canvas { width: 100%; height: 140px; display: block; }
   .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 8px; font-size: 13px; }
   .bar-row .name { width: 150px; flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .bar-row .track { flex: 1; height: 8px; border-radius: 5px; background: #1c2532; overflow: hidden; }
@@ -81,9 +82,6 @@
   .chip { padding: 5px 10px; border-radius: 999px; font-size: 12px; background: #1c2532; color: var(--muted); border: 1px solid var(--panel-border); }
   .chip.latest { background: rgba(79,140,255,0.15); color: var(--text); border-color: var(--accent); }
 
-  canvas { width: 100%; height: 110px; display: block; }
-  .charts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; margin-top: 18px; }
-  @media (max-width: 720px) { .charts { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
@@ -121,10 +119,9 @@
 
   <div class="history" id="history"></div>
 
-  <div class="charts">
-    <div class="panel"><h2>IMU Gyro Magnitude</h2><canvas id="gyroChart" width="280" height="110"></canvas></div>
-    <div class="panel"><h2>UWB Distance (cm)</h2><canvas id="uwbChart" width="280" height="110"></canvas></div>
-    <div class="panel"><h2>mmWave Range (latest frame)</h2><canvas id="mmwaveChart" width="280" height="110"></canvas></div>
+  <div class="panel" style="margin-top: 18px; text-align: left;">
+    <h2>UWB Wrist Distance (cm) -- right (blue) / left (orange), last capture</h2>
+    <canvas id="uwbChart" width="900" height="140"></canvas>
   </div>
 </div>
 
@@ -150,14 +147,15 @@ function drawLineChart(canvas, series, colors) {
   const ctx = canvas.getContext('2d');
   const w = canvas.width, h = canvas.height;
   ctx.clearRect(0, 0, w, h);
-  if (!series || series.length < 2) return;
   const lines = Array.isArray(series[0]) ? series : [series];
+  if (!lines.some(l => l && l.length >= 2)) return;
   let allVals = [];
-  lines.forEach(l => allVals = allVals.concat(l));
+  lines.forEach(l => { if (l) allVals = allVals.concat(l); });
   let min = Math.min(...allVals), max = Math.max(...allVals);
   if (max - min < 1e-6) max = min + 1;
   const pad = 8;
   lines.forEach((line, li) => {
+    if (!line || line.length < 2) return;
     ctx.beginPath();
     ctx.strokeStyle = colors[li % colors.length];
     ctx.lineWidth = 2;
@@ -167,20 +165,6 @@ function drawLineChart(canvas, series, colors) {
       if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
     });
     ctx.stroke();
-  });
-}
-
-function drawBarProfile(canvas, values) {
-  const ctx = canvas.getContext('2d');
-  const w = canvas.width, h = canvas.height;
-  ctx.clearRect(0, 0, w, h);
-  if (!values || values.length === 0) return;
-  const max = Math.max(...values, 1e-6);
-  const barW = w / values.length;
-  ctx.fillStyle = '#4f8cff';
-  values.forEach((v, i) => {
-    const bh = (v / max) * (h - 8);
-    ctx.fillRect(i * barW, h - bh, Math.max(barW - 1, 1), bh);
   });
 }
 
@@ -205,15 +189,6 @@ function startCountdown() {
   requestAnimationFrame(tick);
 }
 
-function pollLive() {
-  if (!recording) return;
-  fetch('/live')
-    .then(r => r.json())
-    .then(charts => { if (recording) renderCharts(charts); })
-    .catch(() => {});
-  setTimeout(pollLive, 150);
-}
-
 async function record() {
   if (recording) return;
   recording = true;
@@ -222,7 +197,6 @@ async function record() {
   btnSub.textContent = 'recording...';
   ring.style.stroke = '';
   startCountdown();
-  pollLive();
 
   gestureEl.classList.remove('reveal');
 
@@ -270,13 +244,8 @@ function render(data) {
     historyEl.appendChild(chip);
   });
 
-  renderCharts(data);
-}
-
-function renderCharts(charts) {
-  drawLineChart(document.getElementById('gyroChart'), charts.gyro_series || [], ['#4f8cff']);
-  drawLineChart(document.getElementById('uwbChart'), [charts.uwb_right_series || [], charts.uwb_left_series || []], ['#4f8cff', '#f5b942']);
-  drawBarProfile(document.getElementById('mmwaveChart'), charts.mmwave_profile || []);
+  drawLineChart(document.getElementById('uwbChart'),
+    [data.uwb_right_series || [], data.uwb_left_series || []], ['#4f8cff', '#f5b942']);
 }
 
 recordBtn.addEventListener('click', record);

@@ -3,8 +3,10 @@
 
 Same two-tier-confidence sliding-window logic as predict_stream.py, but
 instead of printing to a terminal, it runs a small local HTTP server (no new
-dependencies -- stdlib http.server only) and pushes live prediction +
-sensor-signal updates to predict_stream_ui.html over Server-Sent Events.
+dependencies -- stdlib http.server only) and pushes live prediction updates
+to predict_stream_ui.html over Server-Sent Events. No chart/signal data is
+computed or sent -- only the prediction itself -- to keep per-tick overhead
+on the hot prediction-loop path as low as possible.
 """
 
 from __future__ import annotations
@@ -31,10 +33,15 @@ from predict_live import (
 )
 
 HTML_PATH = Path(__file__).with_name("predict_stream_ui.html")
-CHART_HISTORY = 120  # points kept for the scrolling charts (~ CHART_HISTORY * tick-seconds of history)
+UWB_CHART_HISTORY = 100  # points kept for the UWB scrolling chart (~UWB_CHART_HISTORY * tick-seconds of history)
 
 
 class SharedState:
+    """Only the prediction plus a UWB right/left distance trace are kept --
+    the fuller IMU/mmWave visualization was removed for speed, but a live
+    UWB trace is worth the small per-tick cost for diagnosing UWB-specific
+    live-vs-offline discrepancies."""
+
     def __init__(self, sensors: list[str], accuracy: float) -> None:
         self._lock = threading.Lock()
         self.sensors = sensors
@@ -43,11 +50,9 @@ class SharedState:
         self.confidence = 0.0
         self.top3: list[tuple[str, float]] = []
         self.history: deque[str] = deque(maxlen=10)
-        self.gyro_series: deque[float] = deque(maxlen=CHART_HISTORY)
-        self.uwb_right_series: deque[float] = deque(maxlen=CHART_HISTORY)
-        self.uwb_left_series: deque[float] = deque(maxlen=CHART_HISTORY)
-        self.mmwave_profile: list[float] = []
         self.history.append("Idle")
+        self.uwb_right_series: deque[float] = deque(maxlen=UWB_CHART_HISTORY)
+        self.uwb_left_series: deque[float] = deque(maxlen=UWB_CHART_HISTORY)
 
     def update(self, **kwargs: Any) -> None:
         with self._lock:
@@ -58,11 +63,10 @@ class SharedState:
         with self._lock:
             self.history.append(gesture)
 
-    def extend_series(self, gyro: list[float], uwb_right: list[float], uwb_left: list[float]) -> None:
+    def extend_uwb(self, right: list[float], left: list[float]) -> None:
         with self._lock:
-            self.gyro_series.extend(gyro)
-            self.uwb_right_series.extend(uwb_right)
-            self.uwb_left_series.extend(uwb_left)
+            self.uwb_right_series.extend(right)
+            self.uwb_left_series.extend(left)
 
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
@@ -73,10 +77,8 @@ class SharedState:
                 "confidence": self.confidence,
                 "top3": list(self.top3),
                 "history": list(self.history),
-                "gyro_series": [v for v in self.gyro_series if np.isfinite(v)],
                 "uwb_right_series": [v for v in self.uwb_right_series if np.isfinite(v)],
                 "uwb_left_series": [v for v in self.uwb_left_series if np.isfinite(v)],
-                "mmwave_profile": self.mmwave_profile,
             }
 
 
@@ -84,7 +86,7 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Browser dashboard for continuous gesture prediction.")
     parser.add_argument("--model", required=True)
     parser.add_argument("--window-seconds", type=float, default=2.0)
-    parser.add_argument("--tick-seconds", type=float, default=0.3)
+    parser.add_argument("--tick-seconds", type=float, default=0.1)
     parser.add_argument("--confidence-threshold", type=float, default=0.4)
     parser.add_argument("--high-confidence-threshold", type=float, default=0.65)
     parser.add_argument("--switch-to-gesture-votes", type=int, default=2)
@@ -145,33 +147,18 @@ def prediction_loop(
             windowed = [(t, f) for t, f in buffers[name] if window_start <= t <= now]
             if name == "imu":
                 data.update(build_imu_dict(windowed, window_start))
-                gx = data.get("imu_gx", np.array([]))
-                gy = data.get("imu_gy", np.array([]))
-                gz = data.get("imu_gz", np.array([]))
-                if gx.size:
-                    mag = np.sqrt(gx**2 + gy**2 + gz**2)
-                    # Sample down to a handful of points per tick so the chart
-                    # scrolls smoothly without accumulating unbounded detail.
-                    take = mag[-max(1, mag.size // 5):]
-                    state.extend_series(list(take.astype(float)), [], [])
             elif name == "mmwave":
                 data.update(build_mmwave_dict(windowed, window_start))
-                profile = data.get("mmwave_range_profile")
-                if profile is not None and profile.size:
-                    cropped = tg.crop_mmwave_range(
-                        profile, feature_args.mmwave_min_range_m,
-                        feature_args.mmwave_max_range_m, feature_args.mmwave_bin_spacing_m,
-                    )
-                    if cropped.size:
-                        state.update(mmwave_profile=[float(v) for v in cropped[-1]])
             elif name == "uwb":
                 data.update(build_uwb_dict(windowed, window_start))
                 right = data.get("uwb_right_distance_cm", np.array([]))
                 left = data.get("uwb_left_distance_cm", np.array([]))
                 if right.size or left.size:
+                    # Only the newest points each tick, so the chart scrolls
+                    # instead of re-plotting the whole window every time.
                     take_r = right[-max(1, right.size // 5):] if right.size else np.array([])
                     take_l = left[-max(1, left.size // 5):] if left.size else np.array([])
-                    state.extend_series([], list(take_r.astype(float)), list(take_l.astype(float)))
+                    state.extend_uwb(list(take_r.astype(float)), list(take_l.astype(float)))
 
         features, _ = tg.extract_features(data, feature_args)
         X = np.asarray([features], dtype=float)

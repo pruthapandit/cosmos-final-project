@@ -34,7 +34,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--model", required=True, help="Path to a .joblib model saved by train_gesture.py")
     parser.add_argument("--window-seconds", type=float, default=2.0,
                          help="How much recent history to classify each tick (should match training trial length).")
-    parser.add_argument("--tick-seconds", type=float, default=0.3,
+    parser.add_argument("--tick-seconds", type=float, default=0.2,
                          help="How often to re-classify. Shorter = more chances for a sliding window "
                          "to land well-aligned on a brief, one-shot (discrete) gesture.")
     parser.add_argument("--confidence-threshold", type=float, default=0.4,
