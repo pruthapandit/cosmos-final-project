@@ -139,6 +139,9 @@
     to   { opacity: 1; transform: translateY(0) scale(1); }
   }
 
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+  @media (max-width: 760px) { .grid-2 { grid-template-columns: 1fr; } }
+
   .panel {
     background: var(--panel); border: 1px solid var(--panel-border); border-radius: var(--radius-md);
     padding: 18px 20px; backdrop-filter: blur(14px);
@@ -148,6 +151,11 @@
     font-size: 12px; text-transform: uppercase; letter-spacing: 0.1em; color: var(--muted);
     margin: 0 0 14px; font-weight: 700; display: flex; align-items: center; justify-content: space-between;
   }
+  .legend { display: flex; gap: 12px; font-size: 11px; font-weight: 500; letter-spacing: 0; text-transform: none; }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; color: var(--text-2); }
+  .legend i { width: 8px; height: 8px; border-radius: 50%; display: inline-block; }
+
+  canvas { width: 100%; height: 150px; display: block; }
 
   .bar-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; font-size: 13px; }
   .bar-row:last-child { margin-bottom: 0; }
@@ -197,9 +205,22 @@
     <div class="history" id="history"></div>
   </div>
 
-  <div class="panel">
-    <h2>Top Candidates<span style="font-weight:500;color:var(--muted);text-transform:none;letter-spacing:0;">this tick</span></h2>
-    <div id="top3"></div>
+  <div class="grid-2">
+    <div class="panel">
+      <h2>Top Candidates<span style="font-weight:500;color:var(--muted);text-transform:none;letter-spacing:0;">this tick</span></h2>
+      <div id="top3"></div>
+    </div>
+
+    <div class="panel">
+      <h2>
+        UWB Wrist Distance
+        <span class="legend">
+          <span><i style="background:var(--series-right)"></i>Right</span>
+          <span><i style="background:var(--series-left)"></i>Left</span>
+        </span>
+      </h2>
+      <canvas id="uwbChart" width="900" height="150"></canvas>
+    </div>
   </div>
 </div>
 
@@ -223,6 +244,79 @@ const ICONS = {
   'Two-Arm Boxing': '🥊', 'Clapping': '👏', 'T-Arm': '🤸', 'Raise Arms': '🙌',
   'Soli': '🖐️', 'Making Fist and Open': '✊', 'Palm Up-Down': '🤚',
 };
+
+function drawLineChart(canvas, series, colors) {
+  const ctx = canvas.getContext('2d');
+  const dpr = window.devicePixelRatio || 1;
+  const cssW = canvas.clientWidth || 900, cssH = canvas.clientHeight || 150;
+  if (canvas.width !== cssW * dpr || canvas.height !== cssH * dpr) {
+    canvas.width = cssW * dpr; canvas.height = cssH * dpr;
+  }
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  const w = cssW, h = cssH;
+  ctx.clearRect(0, 0, w, h);
+
+  const lines = Array.isArray(series[0]) ? series : [series];
+  const padL = 6, padR = 6, padT = 10, padB = 8;
+  const gridColor = getComputedStyle(document.documentElement).getPropertyValue('--grid').trim();
+
+  // horizontal gridlines (recessive hairlines)
+  ctx.strokeStyle = gridColor;
+  ctx.lineWidth = 1;
+  for (let i = 0; i <= 3; i++) {
+    const y = padT + (i / 3) * (h - padT - padB);
+    ctx.beginPath();
+    ctx.moveTo(padL, Math.round(y) + 0.5);
+    ctx.lineTo(w - padR, Math.round(y) + 0.5);
+    ctx.stroke();
+  }
+
+  if (!lines.some(l => l && l.length >= 2)) return;
+  let allVals = [];
+  lines.forEach(l => { if (l) allVals = allVals.concat(l); });
+  let min = Math.min(...allVals), max = Math.max(...allVals);
+  if (max - min < 1e-6) max = min + 1;
+  const span = max - min;
+  min -= span * 0.08; max += span * 0.08;
+
+  lines.forEach((line, li) => {
+    if (!line || line.length < 2) return;
+    const color = colors[li % colors.length];
+    const pts = line.map((v, i) => ({
+      x: padL + (i / (line.length - 1)) * (w - padL - padR),
+      y: padT + (h - padT - padB) - ((v - min) / (max - min)) * (h - padT - padB),
+    }));
+
+    // area wash under the line (~10% opacity)
+    ctx.beginPath();
+    ctx.moveTo(pts[0].x, h - padB);
+    pts.forEach(p => ctx.lineTo(p.x, p.y));
+    ctx.lineTo(pts[pts.length - 1].x, h - padB);
+    ctx.closePath();
+    ctx.fillStyle = color + '1A';
+    ctx.fill();
+
+    // line, 2px, rounded joins
+    ctx.beginPath();
+    ctx.strokeStyle = color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    ctx.lineCap = 'round';
+    pts.forEach((p, i) => { if (i === 0) ctx.moveTo(p.x, p.y); else ctx.lineTo(p.x, p.y); });
+    ctx.stroke();
+
+    // end marker with surface ring
+    const last = pts[pts.length - 1];
+    ctx.beginPath();
+    ctx.arc(last.x, last.y, 5, 0, Math.PI * 2);
+    ctx.fillStyle = getComputedStyle(document.documentElement).getPropertyValue('--panel-solid').trim();
+    ctx.fill();
+    ctx.beginPath();
+    ctx.arc(last.x, last.y, 4, 0, Math.PI * 2);
+    ctx.fillStyle = color;
+    ctx.fill();
+  });
+}
 
 function setGesture(name, kind) {
   gestureEl.textContent = name === 'None' ? 'None (unrecognized)' : name;
@@ -267,6 +361,11 @@ function render(data) {
     chip.textContent = g;
     historyEl.appendChild(chip);
   });
+
+  drawLineChart(document.getElementById('uwbChart'),
+    [data.uwb_right_series || [], data.uwb_left_series || []],
+    [getComputedStyle(document.documentElement).getPropertyValue('--series-right').trim(),
+     getComputedStyle(document.documentElement).getPropertyValue('--series-left').trim()]);
 }
 
 function connect() {
