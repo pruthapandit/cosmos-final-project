@@ -46,16 +46,15 @@ a dynamic-enum patch this library relies on -- Python 3.9/3.10 works).
 [<img width="1509" height="851" alt="Demo Video Thumbnail" src="https://github.com/user-attachments/assets/d5a1270e-c4de-411e-af16-9ce7aff9afda" />](https://drive.google.com/file/d/1eZHX9ld04wxXehSZrOb5YAlqsGebDRLl/view?usp=sharing)
 
 
-
 # Reminder:
 
-Code for real time ui demo with UWB ranging results:
+Code for real-time UI demo with UWB ranging results:
 ```bash
 /opt/anaconda3/envs/uwb-lab/bin/python predict_stream_ui.py \
   --model models/random_forest_jianhao_eric_joycelyn_evelyn_v2.joblib \
   --window-seconds 2 \
   --tick-seconds 0.1 \
-  --confidence-threshold 0.55 \
+  --confidence-threshold 0.40 \
   --high-confidence-threshold 0.70 \
   --imu-port /dev/cu.wchusbserial5B1F0091131 \
   --mmwave-port /dev/cu.usbserial-BH00LV2S \
