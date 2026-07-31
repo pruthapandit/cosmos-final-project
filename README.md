@@ -47,7 +47,7 @@ a dynamic-enum patch this library relies on -- Python 3.9/3.10 works).
 
 
 
-# Just to remind:
+# Reminder:
 
 Code for real time ui demo with UWB ranging results:
 ```bash
