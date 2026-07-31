@@ -3,9 +3,10 @@
 
 Same two-tier-confidence sliding-window logic as predict_stream.py, but
 instead of printing to a terminal, it runs a small local HTTP server (no new
-dependencies -- stdlib http.server only) and pushes live prediction updates,
-plus a scrolling UWB right/left wrist-distance trace, to predict_stream_ui.html
-over Server-Sent Events.
+dependencies -- stdlib http.server only) and pushes live prediction updates
+to predict_stream_ui.html over Server-Sent Events. No chart/signal data is
+computed or sent -- only the prediction itself -- to keep per-tick overhead
+on the hot prediction-loop path as low as possible.
 
 This is predict_stream_ui.py plus a false-positive guard for gestures that
 should only ever fire with a specific two-wrist or single-wrist movement
@@ -38,12 +39,30 @@ from predict_live import (
 )
 
 HTML_PATH = Path(__file__).with_name("predict_stream_ui.html")
-UWB_CHART_HISTORY = 100  # points kept for the UWB scrolling chart (~UWB_CHART_HISTORY * tick-seconds of history)
 
-# Clapping and One-Arm Boxing's real-gesture confidence tends to sit lower
-# than the other classes' even on clean trials, so they get their own lower
-# bar; everything else still uses --confidence-threshold.
-CONFIDENCE_THRESHOLD_OVERRIDES = {"Clapping": 0.35, "One-Arm Boxing": 0.35}
+# Clapping, One-Arm Boxing, and Clockwise's real-gesture confidence tends to
+# sit lower than the other classes' even on clean trials, so they get their
+# own lower bar. T-Arm gets a higher bar instead, to cut down on
+# false-positive T-Arm reads. Everything else still uses
+# --confidence-threshold.
+CONFIDENCE_THRESHOLD_OVERRIDES = {"Clapping": 0.35, "One-Arm Boxing": 0.35, "Clockwise": 0.35, "T-Arm": 0.45}
+
+# Some gestures' decelerating tail motion (the arm(s) slowing down and
+# stopping) briefly looks like a different, unrelated gesture, causing a
+# flash of the wrong one for a tick right after the real gesture ends: a
+# two-arm boxing swing settling looks like a one-arm punch, a clockwise or
+# anti-clockwise arm slowing down looks like a T-Arm hold, and a one-arm
+# punch or a Left swing settling both look like a Pull tug. Maps
+# blocked_gesture -> [(recently_seen_gesture, lockout_seconds), ...]: once
+# any of its recently_seen_gestures has been the (post-threshold/guard)
+# prediction, don't let blocked_gesture be displayed again until that
+# source's lockout_seconds have passed without it recurring.
+POST_GESTURE_LOCKOUTS: dict[str, list[tuple[str, float]]] = {
+    "One-Arm Boxing": [("Two-Arm Boxing", 5.0)],
+    "T-Arm": [("Clockwise", 5.0), ("Anti-clockwise", 5.0)],
+    "Pull": [("One-Arm Boxing", 5.0), ("Left", 5.0)],
+}
+LOCKOUT_SOURCE_GESTURES = {source for sources in POST_GESTURE_LOCKOUTS.values() for source, _ in sources}
 
 # These are only ever genuine gestures when BOTH wrists move -- a one-arm
 # gesture (or raising/punching with just one arm) occasionally scores high
@@ -193,8 +212,6 @@ class SharedState:
         self.top3: list[tuple[str, float]] = []
         self.history: deque[str] = deque(maxlen=10)
         self.history.append("Idle")
-        self.uwb_right_series: deque[float] = deque(maxlen=UWB_CHART_HISTORY)
-        self.uwb_left_series: deque[float] = deque(maxlen=UWB_CHART_HISTORY)
 
     def update(self, **kwargs: Any) -> None:
         with self._lock:
@@ -205,11 +222,6 @@ class SharedState:
         with self._lock:
             self.history.append(gesture)
 
-    def extend_uwb(self, right: list[float], left: list[float]) -> None:
-        with self._lock:
-            self.uwb_right_series.extend(right)
-            self.uwb_left_series.extend(left)
-
     def snapshot(self) -> dict[str, Any]:
         with self._lock:
             return {
@@ -219,8 +231,6 @@ class SharedState:
                 "confidence": self.confidence,
                 "top3": list(self.top3),
                 "history": list(self.history),
-                "uwb_right_series": [v for v in self.uwb_right_series if np.isfinite(v)],
-                "uwb_left_series": [v for v in self.uwb_left_series if np.isfinite(v)],
             }
 
 
@@ -292,6 +302,7 @@ def prediction_loop(
     displayed = "Idle"
     pending_candidate: str | None = None
     pending_count = 0
+    last_seen_source_time: dict[str, float] = {gesture: float("-inf") for gesture in LOCKOUT_SOURCE_GESTURES}
 
     while not stop_event.is_set():
         time.sleep(args.tick_seconds)
@@ -313,14 +324,6 @@ def prediction_loop(
                 data.update(build_mmwave_dict(windowed, window_start))
             elif name == "uwb":
                 data.update(build_uwb_dict(windowed, window_start))
-                right = data.get("uwb_right_distance_cm", np.array([]))
-                left = data.get("uwb_left_distance_cm", np.array([]))
-                if right.size or left.size:
-                    # Only the newest points each tick, so the chart scrolls
-                    # instead of re-plotting the whole window every time.
-                    take_r = right[-max(1, right.size // 5):] if right.size else np.array([])
-                    take_l = left[-max(1, left.size // 5):] if left.size else np.array([])
-                    state.extend_uwb(list(take_r.astype(float)), list(take_l.astype(float)))
 
         features, _ = tg.extract_features(data, feature_args)
         X = np.asarray([features], dtype=float)
@@ -368,6 +371,25 @@ def prediction_loop(
                     print(f"[directional] {prediction:16s} delta={delta:6.1f}cm -> {verdict}")
                 if dfails:
                     prediction = "None"
+
+        # If this tick's (guard-accepted) prediction is a "blocked"
+        # gesture, bounce it to "None" while its source gesture is still
+        # within its lockout window -- checked first, since a couple of
+        # these chain (a One-Arm Boxing reading suppressed here as a
+        # Two-Arm-Boxing trailing artifact shouldn't itself count as
+        # genuine evidence below).
+        for source, lockout_seconds in POST_GESTURE_LOCKOUTS.get(prediction, []):
+            if now - last_seen_source_time[source] < lockout_seconds:
+                prediction = "None"
+                break
+
+        # Refresh the relevant lockout on every tick the (possibly
+        # just-downgraded) prediction still reads as one of the "source"
+        # gestures, not just the tick it gets displayed, so a gesture
+        # sequence longer than the lockout window stays protected the whole
+        # time, not just for its first few seconds.
+        if prediction in LOCKOUT_SOURCE_GESTURES:
+            last_seen_source_time[prediction] = now
 
         if prediction == displayed:
             pending_candidate = None
